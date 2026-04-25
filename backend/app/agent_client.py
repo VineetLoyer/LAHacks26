@@ -1,83 +1,240 @@
 """
-Agentverse Agent Client — calls the three AskSafe agents deployed on Agentverse.
+Agentverse Agent Integration — runs the same analysis logic used by the
+three AskSafe agents deployed on Agentverse, directly from the backend.
+
+The agents are deployed on Agentverse for ASI:One chat and OmegaClaw discovery.
+The backend calls the same core analysis functions to power the app's features.
+This means the SAME intelligence runs in both contexts:
+  - On Agentverse: users chat with agents via ASI:One
+  - In the app: backend calls the agent logic for clustering, spike detection, reports
 
 Integration points:
-1. Confusion Monitor Agent — called after check-in batches for spike detection
-2. Question Clustering Agent — called when professor generates clusters
-3. Insight Report Agent — called when professor ends session
+1. Confusion Monitor — called after check-in batches for spike detection + correlation
+2. Question Clustering — called when professor generates clusters
+3. Insight Report — called when professor ends session
 
-Each function has a fallback to return None if the agent is unreachable,
-so the backend can fall back to direct Gemini calls.
+All functions use synchronous pymongo (same as the Agentverse-hosted agents)
+and are called from async FastAPI routes via run_in_executor when needed.
 """
 import os
+import re
 import json
-import httpx
 from typing import Optional, List
-from dotenv import load_dotenv
 
-load_dotenv()
+from pymongo import MongoClient
 
-# Agentverse agent addresses
-CONFUSION_MONITOR_ADDRESS = os.getenv(
-    "AGENT_CONFUSION_MONITOR",
-    "agent1qw57pw9a0ky2tlhh0ll7rt7ne6g3sarqxtr7hnlkc05cpen056kty7dwxyt",
-)
-QUESTION_CLUSTERING_ADDRESS = os.getenv(
-    "AGENT_QUESTION_CLUSTERING",
-    "agent1q2lm9wvrstlj4vcyf2069s299ag9d8566kll3xp7vwz62dzws3vxy2ejkhd",
-)
-INSIGHT_REPORT_ADDRESS = os.getenv(
-    "AGENT_INSIGHT_REPORT",
-    "agent1qfpyr023l6jy3t0e7qd4crc8flcdeuytvxgzx4fezej4ked2lfqfjgpz6hy",
-)
-
-# Agentverse Almanac API base URL for sending messages to agents
-AGENTVERSE_API = "https://agentverse.ai/v1/almanac/agents"
-
-# Timeout for agent calls (seconds)
-AGENT_TIMEOUT = 30
+# MongoDB connection (synchronous — same as the Agentverse agents use)
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+_mongo_client = None
+_mongo_db = None
 
 
-async def _send_chat_message(agent_address: str, message: str) -> Optional[str]:
-    """Send a chat message to an Agentverse agent and return the response.
+def _get_db():
+    global _mongo_client, _mongo_db
+    if _mongo_client is None:
+        _mongo_client = MongoClient(MONGODB_URI)
+        _mongo_db = _mongo_client["asksafe"]
+    return _mongo_db
 
-    Uses the Agentverse REST API to send a message to the agent's chat endpoint.
-    Returns the agent's response text, or None if the call fails.
-    """
-    try:
-        # Use the Agentverse chat API endpoint
-        url = f"https://agentverse.ai/v1beta1/engine/chat/completions"
 
-        payload = {
-            "model": agent_address,
-            "messages": [
-                {"role": "user", "content": message}
-            ],
-        }
+def _extract_session_code(text: str) -> Optional[str]:
+    codes = re.findall(r"\b([A-Z0-9]{6})\b", text.upper())
+    for c in codes:
+        if any(ch.isdigit() for ch in c):
+            return c
+    return None
 
-        async with httpx.AsyncClient(timeout=AGENT_TIMEOUT) as client:
-            response = await client.post(
-                url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
+
+# ---------------------------------------------------------------------------
+# Confusion Monitor Agent Logic
+# (Same as agentverse_confusion_monitor.py::_compute_confusion_analytics)
+# ---------------------------------------------------------------------------
+
+def compute_confusion_analytics(session_code: str) -> str:
+    """Analyze confusion data for a session — same logic as the Agentverse agent."""
+    db = _get_db()
+
+    session = db.sessions.find_one({"code": session_code.upper()})
+    if not session:
+        return f"Session {session_code} not found."
+
+    session_id = session["_id"]
+    title = session.get("title", "Untitled")
+    threshold = session.get("confusion_threshold", 60)
+
+    checkins = list(db.checkins.find({"session_id": session_id}))
+    if not checkins:
+        return f"Session {title} ({session_code}) has no check-in data yet."
+
+    total = len(checkins)
+    confused_count = sum(1 for c in checkins if c.get("confusion_rating", 0) >= 4)
+    overall_index = round((confused_count / total) * 100) if total > 0 else 0
+    avg_rating = round(sum(c.get("confusion_rating", 3) for c in checkins) / total, 2)
+
+    # Per-slide breakdown
+    slide_data: dict = {}
+    for c in checkins:
+        slide = c.get("slide")
+        if slide is None:
+            continue
+        slide_data.setdefault(slide, []).append(c.get("confusion_rating", 3))
+
+    spikes = []
+    for slide_num in sorted(slide_data.keys()):
+        ratings = slide_data[slide_num]
+        slide_confused = sum(1 for r in ratings if r >= 4)
+        slide_pct = round((slide_confused / len(ratings)) * 100)
+        if slide_pct >= threshold:
+            # Get questions near this slide for context
+            q_count = db.questions.count_documents({
+                "session_id": session_id,
+                "slide": {"$gte": slide_num - 1, "$lte": slide_num + 1},
+            })
+            sample_qs = list(db.questions.find(
+                {"session_id": session_id, "slide": slide_num}
+            ).limit(2))
+            topics = [q.get("text", "")[:60] for q in sample_qs if q.get("text")]
+            topic_hint = f' about "{", ".join(topics)}"' if topics else ""
+            spikes.append(
+                f"Slide {slide_num}: {slide_pct}% confused — "
+                f"{q_count} question(s){topic_hint}"
             )
 
-            if response.status_code == 200:
-                data = response.json()
-                # Extract the agent's response text
-                choices = data.get("choices", [])
-                if choices:
-                    return choices[0].get("message", {}).get("content", "")
-            else:
-                print(
-                    f"[AgentClient] Agent {agent_address} returned "
-                    f"status {response.status_code}: {response.text[:200]}"
-                )
-                return None
+    lines = [f"Confusion Report for \"{title}\" ({session_code})"]
+    lines.append(f"Overall: {overall_index}% | Avg rating: {avg_rating}/5 | {total} check-ins")
+    if spikes:
+        lines.append(f"SPIKES ({len(spikes)}):")
+        for s in spikes:
+            lines.append(f"  - {s}")
+    else:
+        lines.append("No confusion spikes detected.")
 
-    except Exception as e:
-        print(f"[AgentClient] Failed to reach agent {agent_address}: {e}")
-        return None
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Question Clustering Agent Logic
+# (Same as agentverse_question_clustering.py::_cluster_session_questions)
+# ---------------------------------------------------------------------------
+
+def cluster_session_questions(session_code: str) -> str:
+    """Cluster questions for a session — same logic as the Agentverse agent."""
+    db = _get_db()
+
+    session = db.sessions.find_one({"code": session_code.upper()})
+    if not session:
+        return f"Session {session_code} not found."
+
+    session_id = session["_id"]
+    title = session.get("title", "Untitled")
+
+    questions = list(db.questions.find({"session_id": session_id}).limit(500))
+    if not questions:
+        return f"Session {title} ({session_code}) has no questions yet."
+
+    existing = list(db.clusters.find({"session_id": session_id}).limit(100))
+
+    lines = [f"Question Clusters for \"{title}\" ({session_code})"]
+    lines.append(f"{len(questions)} total questions")
+
+    clusters = existing if existing else []
+    source = "existing clusters" if existing else "no clusters generated yet"
+    lines.append(f"Source: {source}")
+
+    for i, c in enumerate(clusters, 1):
+        label = c.get("label", "Unnamed")
+        q_ids = c.get("question_ids", [])
+        on_topic = "On-topic" if c.get("on_topic", True) else "Off-topic"
+        status = c.get("status", "pending")
+        upvotes = c.get("upvotes", 0)
+        status_mark = " [Addressed]" if status == "addressed" else ""
+
+        lines.append(f"  Cluster {i}: {label} ({on_topic}){status_mark}")
+        lines.append(f"    {len(q_ids)} questions | {upvotes} upvotes")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Insight Report Agent Logic
+# (Same as agentverse_insight_report.py::_generate_session_report)
+# ---------------------------------------------------------------------------
+
+def generate_session_report(session_code: str) -> str:
+    """Generate a session report — same logic as the Agentverse agent."""
+    db = _get_db()
+
+    session = db.sessions.find_one({"code": session_code.upper()})
+    if not session:
+        return f"Session {session_code} not found."
+
+    session_id = session["_id"]
+    title = session.get("title", "Untitled")
+    threshold = session.get("confusion_threshold", 60)
+    status = session.get("status", "active")
+
+    total_participants = max(
+        session.get("live_participant_count", 0),
+        session.get("demo_participant_count", 0),
+    )
+    checkins = list(db.checkins.find({"session_id": session_id}).limit(5000))
+    questions = list(db.questions.find({"session_id": session_id}).limit(500))
+    clusters = list(db.clusters.find({"session_id": session_id}).limit(100))
+
+    total_checkins = len(checkins)
+    total_questions = len(questions)
+    total_clusters = len(clusters)
+    clusters_addressed = sum(1 for c in clusters if c.get("status") == "addressed")
+
+    overall_confused = sum(1 for c in checkins if c.get("confusion_rating", 0) >= 4)
+    overall_index = round((overall_confused / total_checkins) * 100) if total_checkins > 0 else 0
+
+    lines = [f"Session Report: \"{title}\" ({session_code})"]
+    lines.append(f"Status: {'Ended' if status == 'ended' else 'Active'}")
+    lines.append(f"Participants: {total_participants} | Check-ins: {total_checkins}")
+    lines.append(f"Questions: {total_questions} | Clusters: {total_clusters} ({clusters_addressed} addressed)")
+    lines.append(f"Overall confusion: {overall_index}%")
+
+    # Per-slide confusion
+    slide_data: dict = {}
+    for c in checkins:
+        slide = c.get("slide")
+        if slide is None:
+            continue
+        slide_data.setdefault(slide, {"total": 0, "confused": 0})
+        slide_data[slide]["total"] += 1
+        if c.get("confusion_rating", 0) >= 4:
+            slide_data[slide]["confused"] += 1
+
+    spikes = []
+    for s in sorted(slide_data.keys()):
+        sd = slide_data[s]
+        pct = round((sd["confused"] / sd["total"]) * 100) if sd["total"] > 0 else 0
+        if pct >= threshold:
+            spikes.append(f"Slide {s}: {pct}% confused")
+
+    if spikes:
+        lines.append(f"Spikes: {', '.join(spikes)}")
+
+    # Top clusters
+    if clusters:
+        sorted_c = sorted(clusters, key=lambda c: len(c.get("question_ids", [])), reverse=True)
+        lines.append("Top clusters:")
+        for c in sorted_c[:5]:
+            icon = "[Done]" if c.get("status") == "addressed" else "[Pending]"
+            lines.append(f"  {icon} {c.get('label', 'Unnamed')} ({len(c.get('question_ids', []))} qs)")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Async wrappers (called from FastAPI routes)
+# ---------------------------------------------------------------------------
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+_executor = ThreadPoolExecutor(max_workers=3)
 
 
 async def call_confusion_monitor(
@@ -86,20 +243,16 @@ async def call_confusion_monitor(
     slide: Optional[int] = None,
     threshold: int = 60,
 ) -> Optional[dict]:
-    """Call the Confusion Monitor Agent with check-in data.
-
-    Returns a dict with confusion analytics, or None if agent is unreachable.
-    The agent queries MongoDB directly, so we just need to send the session code.
-    """
-    message = (
-        f"Analyze confusion for session {session_code}. "
-        f"Latest batch: {len(ratings)} check-ins on slide {slide or 'unknown'}, "
-        f"threshold {threshold}%."
-    )
-
-    response = await _send_chat_message(CONFUSION_MONITOR_ADDRESS, message)
-    if response:
-        return {"agent_response": response, "source": "agentverse"}
+    """Async wrapper for confusion monitor analysis."""
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _executor, compute_confusion_analytics, session_code
+        )
+        if result:
+            return {"agent_response": result, "source": "agentverse-integrated"}
+    except Exception as e:
+        print(f"[AgentClient] Confusion Monitor failed: {e}")
     return None
 
 
@@ -108,20 +261,16 @@ async def call_question_clustering(
     title: str,
     question_count: int,
 ) -> Optional[dict]:
-    """Call the Question Clustering Agent to cluster session questions.
-
-    Returns a dict with clustering results, or None if agent is unreachable.
-    The agent queries MongoDB directly for questions and slide contexts.
-    """
-    message = (
-        f"Cluster the questions for session {session_code}. "
-        f"Lecture title: \"{title}\". "
-        f"There are {question_count} questions to analyze."
-    )
-
-    response = await _send_chat_message(QUESTION_CLUSTERING_ADDRESS, message)
-    if response:
-        return {"agent_response": response, "source": "agentverse"}
+    """Async wrapper for question clustering analysis."""
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _executor, cluster_session_questions, session_code
+        )
+        if result:
+            return {"agent_response": result, "source": "agentverse-integrated"}
+    except Exception as e:
+        print(f"[AgentClient] Question Clustering failed: {e}")
     return None
 
 
@@ -129,17 +278,14 @@ async def call_insight_report(
     session_code: str,
     title: str,
 ) -> Optional[dict]:
-    """Call the Insight Report Agent to generate a session report.
-
-    Returns a dict with the report, or None if agent is unreachable.
-    The agent queries MongoDB directly for all session data.
-    """
-    message = (
-        f"Generate a comprehensive report for session {session_code}. "
-        f"Lecture title: \"{title}\"."
-    )
-
-    response = await _send_chat_message(INSIGHT_REPORT_ADDRESS, message)
-    if response:
-        return {"agent_response": response, "source": "agentverse"}
+    """Async wrapper for insight report generation."""
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _executor, generate_session_report, session_code
+        )
+        if result:
+            return {"agent_response": result, "source": "agentverse-integrated"}
+    except Exception as e:
+        print(f"[AgentClient] Insight Report failed: {e}")
     return None
