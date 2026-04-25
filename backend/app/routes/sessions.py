@@ -1,13 +1,15 @@
 import random
 import string
 from datetime import datetime, timedelta
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from bson import ObjectId
 
 from app.database import get_db
 from app.sio_instance import sio
 from app.models import CreateSessionRequest, SessionStatus, ClusterStatus
+from app.file_parser import parse_pdf, parse_docx, parse_pptx
 
 router = APIRouter()
 
@@ -289,6 +291,92 @@ async def create_session(req: CreateSessionRequest):
         "code": code,
         "title": title,
     }
+
+
+@router.post("/create-with-file")
+async def create_session_with_file(
+    title: str = Form(""),
+    anonymous_mode: str = Form("true"),
+    confusion_threshold: int = Form(60),
+    demo_mode: str = Form("false"),
+    file: Optional[UploadFile] = File(None),
+):
+    """Create a session with optional lecture material file upload (multipart form)."""
+    db = get_db()
+    code = generate_code()
+    while await db.sessions.find_one({"code": code}):
+        code = generate_code()
+
+    # Parse string booleans from form fields
+    is_anonymous = anonymous_mode.lower() in ("true", "1", "yes")
+    is_demo = demo_mode.lower() in ("true", "1", "yes")
+
+    if is_demo and not title:
+        title = "Data Mining - Stream Processing"
+
+    # Parse uploaded file if present
+    slide_contexts = []
+    lecture_material_filename = None
+
+    if file and file.filename:
+        file_bytes = await file.read()
+        if len(file_bytes) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File exceeds 50MB limit")
+
+        ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+        lecture_material_filename = file.filename
+
+        if ext == "pdf":
+            slide_contexts = parse_pdf(file_bytes)
+        elif ext == "docx":
+            slide_contexts = parse_docx(file_bytes)
+        elif ext == "pptx":
+            slide_contexts = parse_pptx(file_bytes)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file type. Please upload PDF, DOCX, or PPTX.",
+            )
+
+    session = {
+        "code": code,
+        "title": title,
+        "anonymous_mode": is_anonymous,
+        "confusion_threshold": confusion_threshold,
+        "current_slide": 1,
+        "status": SessionStatus.active,
+        "demo_mode": is_demo,
+        "demo_participant_count": 0,
+        "live_participant_count": 0,
+        "slide_contexts": slide_contexts,
+        "lecture_material_filename": lecture_material_filename,
+        "created_at": datetime.utcnow(),
+        "ended_at": None,
+    }
+    result = await db.sessions.insert_one(session)
+    session_id = str(result.inserted_id)
+
+    # Auto-seed demo data when demo_mode is true
+    if is_demo:
+        await seed_demo_data(session_id, db)
+
+    return {
+        "id": session_id,
+        "code": code,
+        "title": title,
+        "slides_extracted": len(slide_contexts),
+    }
+
+
+@router.get("/{session_id}/slides")
+async def get_slide_contexts(session_id: str):
+    """Return extracted slide contexts for a session."""
+    db = get_db()
+    session = await db.sessions.find_one({"_id": ObjectId(session_id)})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return {"slides": session.get("slide_contexts", [])}
 
 
 @router.get("/join/{code}")

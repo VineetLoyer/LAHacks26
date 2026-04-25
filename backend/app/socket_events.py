@@ -5,6 +5,8 @@ from bson import ObjectId
 
 # Track connected users per session: {session_code: set(sid)}
 session_rooms: dict[str, set] = {}
+# Track professor SIDs so they don't count as participants
+professor_sids: set = set()
 
 
 @sio.event
@@ -15,12 +17,13 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     print(f"Client disconnected: {sid}")
+    professor_sids.discard(sid)
     db = get_db()
     # Remove from all rooms and update MongoDB counts
     for code, members in session_rooms.items():
         if sid in members:
             members.discard(sid)
-            live_count = len(members)
+            live_count = len(members - professor_sids)
             # Update MongoDB and compute emitted count
             if db is not None:
                 session = await db.sessions.find_one({"code": code})
@@ -46,7 +49,13 @@ async def join_room(sid, data):
     if code:
         await sio.enter_room(sid, code)
         session_rooms.setdefault(code, set()).add(sid)
-        live_count = len(session_rooms[code])
+
+        # Track professor SIDs separately — they don't count as participants
+        if role == "professor":
+            professor_sids.add(sid)
+
+        # Count only non-professor participants
+        live_count = len(session_rooms[code] - professor_sids)
 
         db = get_db()
         emitted_count = live_count
@@ -75,7 +84,7 @@ async def leave_room(sid, data):
         await sio.leave_room(sid, code)
         if code in session_rooms:
             session_rooms[code].discard(sid)
-            live_count = len(session_rooms[code])
+            live_count = len(session_rooms[code] - professor_sids)
 
             db = get_db()
             emitted_count = live_count

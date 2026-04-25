@@ -1,4 +1,6 @@
 import json
+from typing import List, Optional, Set
+
 from fastapi import APIRouter, HTTPException
 from bson import ObjectId
 from google import genai
@@ -11,6 +13,38 @@ from app.models import AddressClusterRequest, ClusterStatus
 router = APIRouter()
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+
+def _build_slide_context_text(
+    slide_contexts: List[dict],
+    slide_numbers: Optional[Set[int]] = None,
+) -> str:
+    """Build a text block of relevant slide content for Gemini prompts.
+
+    If slide_numbers is provided, only include those slides.
+    Otherwise include all slides.
+    Returns empty string if no slide contexts are available.
+    """
+    if not slide_contexts:
+        return ""
+
+    relevant = slide_contexts
+    if slide_numbers:
+        relevant = [
+            sc for sc in slide_contexts
+            if sc.get("slide_number") in slide_numbers
+        ]
+
+    if not relevant:
+        return ""
+
+    lines = ["Lecture slide content for context:"]
+    for sc in sorted(relevant, key=lambda x: x.get("slide_number", 0)):
+        text = sc.get("text_content", "").strip()
+        if text:
+            lines.append(f"  Slide {sc['slide_number']}: {text}")
+
+    return "\n".join(lines)
 
 
 @router.post("/generate/{session_id}")
@@ -30,11 +64,29 @@ async def generate_clusters(session_id: str):
     if not questions:
         return {"clusters": [], "message": "No new questions to cluster"}
 
-    q_list = [{"id": str(q["_id"]), "text": q["text"]} for q in questions]
+    q_list = [{"id": str(q["_id"]), "text": q["text"], "slide": q.get("slide")} for q in questions]
+
+    # Build slide context from session document
+    slide_contexts = session.get("slide_contexts", [])
+    tagged_slides = set()
+    for q in questions:
+        if q.get("slide") is not None:
+            tagged_slides.add(q["slide"])
+    slide_context_text = _build_slide_context_text(slide_contexts, tagged_slides)
+
+    # Build the prompt with optional slide context
+    slide_section = ""
+    if slide_context_text:
+        slide_section = f"""
+{slide_context_text}
+
+Use the slide content above to better understand the context of each question and 
+determine whether questions are on-topic or off-topic relative to the lecture material.
+"""
 
     prompt = f"""You are an educational AI. Given student questions from a lecture 
 titled "{session['title']}", group them into semantic clusters.
-
+{slide_section}
 Questions:
 {json.dumps(q_list, indent=2)}
 
@@ -163,10 +215,28 @@ async def address_cluster(req: AddressClusterRequest):
 
     explanation = ""
     if gemini_client:
+        # Build slide context for the questions in this cluster
+        slide_contexts = session.get("slide_contexts", []) if session else []
+        tagged_slides = set()
+        for q in questions:
+            if q.get("slide") is not None:
+                tagged_slides.add(q["slide"])
+        slide_context_text = _build_slide_context_text(slide_contexts, tagged_slides)
+
+        slide_section = ""
+        if slide_context_text:
+            slide_section = f"""
+{slide_context_text}
+
+Use the slide content above to provide a more specific, context-aware explanation 
+that references the actual lecture material.
+"""
+
         prompt = f"""You are helping a professor address student confusion.
 
 Lecture topic: {session['title']}
 Question cluster: "{cluster['label']}"
+{slide_section}
 Student questions:
 {json.dumps(q_texts, indent=2)}
 

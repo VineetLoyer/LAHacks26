@@ -189,3 +189,27 @@ export function generateReport(sessionId: string) {
 export function getReport(sessionId: string) {
   return request<ReportData>(`/api/reports/${sessionId}`);
 }
+
+// --- Sessions (file upload) ---
+export async function createSessionWithFile(formData: FormData) {
+  const res = await fetch(
+    `${API_BASE}/api/sessions/create-with-file`,
+    { method: "POST", body: formData }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Request failed");
+  }
+  return res.json() as Promise<{
+    id: string;
+    code: string;
+    title: string;
+    slides_extracted: number;
+  }>;
+}
+
+export function getSlideContexts(sessionId: string) {
+  return request<{
+    slides: Array<{ slide_number: number; text_content: string }>;
+  }>(`/api/sessions/${sessionId}/slides`);
+}
