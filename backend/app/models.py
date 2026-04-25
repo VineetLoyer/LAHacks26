@@ -61,3 +61,8 @@ class VerifyWorldIdRequest(BaseModel):
 
 class OptInEmailRequest(BaseModel):
     email: str
+
+
+class SubmitFeedbackRequest(BaseModel):
+    rating: int = Field(ge=1, le=5)  # 1-5 star rating
+    comment: Optional[str] = None  # optional text comment

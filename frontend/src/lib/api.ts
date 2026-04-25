@@ -194,6 +194,10 @@ export interface ReportData {
   flagged_for_next_lecture: string[];
   summary: string;
   generated_at: string;
+  feedback_summary?: {
+    average_rating: number;
+    total_count: number;
+  };
 }
 
 export function generateReport(sessionId: string) {
@@ -243,4 +247,12 @@ export function sendSummary(sessionId: string) {
     `/api/sessions/${sessionId}/send-summary`,
     { method: "POST" }
   );
+}
+
+// --- Feedback ---
+export function submitFeedback(sessionId: string, data: { rating: number; comment?: string }) {
+  return request<{ status: string }>(`/api/sessions/${sessionId}/feedback`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }

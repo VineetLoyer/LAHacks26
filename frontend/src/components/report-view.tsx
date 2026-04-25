@@ -13,6 +13,7 @@ import {
   Flag,
   Sparkles,
   Download,
+  Star,
 } from "lucide-react";
 
 interface ReportViewProps {
@@ -225,6 +226,34 @@ ${report.flagged_for_next_lecture.length > 0 ? `<div class="sec"><div class="st"
           </div>
         </CardContent>
       </Card>
+
+      {/* Student Feedback Summary */}
+      {report.feedback_summary && report.feedback_summary.total_count > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Star className="h-4 w-4 text-yellow-500" />
+              Student Feedback
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl font-bold">
+                {report.feedback_summary.average_rating}
+              </span>
+              <span className="text-lg tracking-wide" aria-label={`${report.feedback_summary.average_rating} out of 5 stars`}>
+                {Array.from({ length: 5 }, (_, i) =>
+                  i < Math.round(report.feedback_summary!.average_rating) ? "★" : "☆"
+                ).join("")}
+              </span>
+              <span className="text-sm text-muted-foreground">/ 5</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Based on {report.feedback_summary.total_count} student{report.feedback_summary.total_count !== 1 ? "s" : ""}
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

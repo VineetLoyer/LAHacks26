@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { submitQuestion, submitCheckin, listClusters, upvoteCluster, optInEmail } from "@/lib/api";
+import { submitQuestion, submitCheckin, listClusters, upvoteCluster, optInEmail, submitFeedback } from "@/lib/api";
 import { getSocket, joinRoom } from "@/lib/socket";
 import { BroadcastFeed, type Broadcast } from "@/components/broadcast-feed";
 import { WhisperButton } from "@/components/whisper-button";
@@ -14,6 +14,7 @@ import { ArrowUpCircle, Mail } from "lucide-react";
 
 const STORAGE_KEY_PREFIX = "asksafe_questions_";
 const EMAIL_OPTIN_KEY_PREFIX = "asksafe_email_optin_";
+const FEEDBACK_KEY_PREFIX = "asksafe_feedback_";
 
 function getStoredQuestions(code: string): string[] {
   if (typeof window === "undefined") return [];
@@ -95,6 +96,10 @@ function SessionContent() {
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [sessionEnded, setSessionEnded] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState<number | null>(null);
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
 
   // Restore submitted questions, upvoted IDs, and email opt-in from localStorage, fetch clusters on mount
   useEffect(() => {
@@ -109,6 +114,11 @@ function SessionContent() {
         const optedIn = localStorage.getItem(`${EMAIL_OPTIN_KEY_PREFIX}${sessionCode}`);
         if (optedIn) {
           setEmailOptedIn(true);
+        }
+        // Restore feedback submission status
+        const feedbackDone = localStorage.getItem(`${FEEDBACK_KEY_PREFIX}${sessionCode}`);
+        if (feedbackDone) {
+          setFeedbackSubmitted(true);
         }
       } catch {
         // localStorage unavailable
@@ -270,6 +280,27 @@ function SessionContent() {
     }
   }
 
+  async function handleSubmitFeedback() {
+    if (feedbackRating === null) return;
+    setFeedbackLoading(true);
+    try {
+      await submitFeedback(sessionId, {
+        rating: feedbackRating,
+        comment: feedbackComment.trim() || undefined,
+      });
+      setFeedbackSubmitted(true);
+      try {
+        localStorage.setItem(`${FEEDBACK_KEY_PREFIX}${sessionCode}`, "1");
+      } catch {
+        // localStorage unavailable
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }
+
   return (
     <main className="min-h-screen p-6 max-w-2xl mx-auto">
       <div className="mb-6">
@@ -408,15 +439,66 @@ function SessionContent() {
         </Card>
       )}
 
-      {/* Session Ended Banner */}
+      {/* Session Ended — Feedback + Email Opt-in */}
       {sessionEnded && (
         <Card className="mb-6 border-blue-500 bg-blue-50 dark:bg-blue-950">
           <CardContent className="pt-4 space-y-4">
-            <p className="text-sm text-blue-700 dark:text-blue-300 font-medium text-center">
-              📋 This session has ended. Thanks for participating!
-            </p>
+            {/* Feedback Form */}
+            {!feedbackSubmitted ? (
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300 text-center">
+                  Session Ended — How was this lecture?
+                </p>
+                {/* Star Rating */}
+                <div className="flex justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setFeedbackRating(star)}
+                      className="text-3xl transition-transform hover:scale-110 focus:outline-none"
+                      aria-label={`Rate ${star} star${star !== 1 ? "s" : ""}`}
+                    >
+                      {feedbackRating !== null && star <= feedbackRating ? "★" : "☆"}
+                    </button>
+                  ))}
+                </div>
+                {feedbackRating !== null && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    {feedbackRating === 1 && "Poor"}
+                    {feedbackRating === 2 && "Fair"}
+                    {feedbackRating === 3 && "Good"}
+                    {feedbackRating === 4 && "Very Good"}
+                    {feedbackRating === 5 && "Excellent"}
+                  </p>
+                )}
+                {/* Optional Comment */}
+                <textarea
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="Any comments for the professor? (optional)"
+                  rows={2}
+                  value={feedbackComment}
+                  onChange={(e) => setFeedbackComment(e.target.value)}
+                />
+                <div className="flex justify-center">
+                  <Button
+                    onClick={handleSubmitFeedback}
+                    disabled={feedbackRating === null || feedbackLoading}
+                    size="sm"
+                  >
+                    {feedbackLoading ? "Submitting..." : "Submit Feedback"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-green-600 dark:text-green-400 font-medium text-center">
+                ✅ Thanks for your feedback!
+              </p>
+            )}
 
-            {/* Email opt-in — only shown after session ends */}
+            {/* Divider */}
+            <div className="border-t border-blue-200 dark:border-blue-800" />
+
+            {/* Email opt-in */}
             {emailOptedIn ? (
               <p className="text-sm text-green-600 dark:text-green-400 text-center">
                 ✅ You&apos;ll receive a summary at your email shortly.

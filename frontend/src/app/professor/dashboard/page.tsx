@@ -95,6 +95,7 @@ function DashboardContent() {
   const [showReport, setShowReport] = useState(false);
   const [sessionTitle, setSessionTitle] = useState("");
   const [showHidden, setShowHidden] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
 
   // --- Fetch initial data ---
   useEffect(() => {
@@ -287,6 +288,7 @@ function DashboardContent() {
       const data = await generateReport(sessionId);
       setReport(data);
       setShowReport(true);
+      setSessionEnded(true);
     } catch {
       // keep going on error
     } finally {
@@ -305,6 +307,19 @@ function DashboardContent() {
   return (
     <main className="min-h-screen p-6">
       <div className="max-w-7xl mx-auto space-y-6">
+        {/* Session Ended Banner */}
+        {sessionEnded && (
+          <div className="rounded-lg border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950 px-4 py-3 flex items-center gap-3">
+            <StopCircle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0" />
+            <div>
+              <p className="font-semibold text-red-700 dark:text-red-300">Session Ended</p>
+              <p className="text-sm text-red-600 dark:text-red-400">
+                This session has been closed. The report is available below.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -429,7 +444,7 @@ function DashboardContent() {
                 onChange={(e) => setCurrentSlide(Number(e.target.value) || 1)}
                 className="w-20"
               />
-              <Button onClick={handleTriggerCheckin} disabled={checkinInProgress}>
+              <Button onClick={handleTriggerCheckin} disabled={checkinInProgress || sessionEnded}>
                 {checkinInProgress ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -448,7 +463,7 @@ function DashboardContent() {
             <Button
               variant="secondary"
               onClick={handleGenerateClusters}
-              disabled={clusterLoading}
+              disabled={clusterLoading || sessionEnded}
             >
               {clusterLoading ? (
                 <>
@@ -651,12 +666,17 @@ function DashboardContent() {
             <Button
               variant="destructive"
               onClick={handleGenerateReport}
-              disabled={reportLoading}
+              disabled={reportLoading || sessionEnded}
             >
               {reportLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Generating Report...
+                </>
+              ) : sessionEnded ? (
+                <>
+                  <StopCircle className="h-4 w-4" />
+                  Session Ended
                 </>
               ) : (
                 <>

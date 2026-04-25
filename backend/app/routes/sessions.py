@@ -9,8 +9,10 @@ from bson import ObjectId
 
 from app.database import get_db
 from app.sio_instance import sio
-from app.models import CreateSessionRequest, SessionStatus, ClusterStatus, OptInEmailRequest
+from app.models import CreateSessionRequest, SessionStatus, ClusterStatus, OptInEmailRequest, SubmitFeedbackRequest
 from app.file_parser import parse_pdf, parse_docx, parse_pptx
+from app.config import GEMINI_API_KEY
+from google import genai
 
 router = APIRouter()
 
@@ -567,4 +569,102 @@ async def send_summary(session_id: str):
         "emails_sent": len(emails),
         "summary": summary_text,
         "message": f"Summary logged for {len(emails)} student(s). Email records deleted.",
+    }
+
+
+# --- Feedback ---
+
+_gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+
+@router.post("/{session_id}/feedback")
+async def submit_feedback(session_id: str, req: SubmitFeedbackRequest):
+    """Submit anonymous post-session feedback from a student."""
+    db = get_db()
+    sid = ObjectId(session_id)
+
+    session = await db.sessions.find_one({"_id": sid})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await db.session_feedback.insert_one({
+        "session_id": sid,
+        "rating": req.rating,
+        "comment": req.comment or "",
+        "submitted_at": datetime.utcnow(),
+    })
+
+    return {"status": "submitted"}
+
+
+@router.get("/{session_id}/feedback-summary")
+async def get_feedback_summary(session_id: str):
+    """Return aggregated feedback for a session with optional AI-filtered comments."""
+    db = get_db()
+    sid = ObjectId(session_id)
+
+    cursor = db.session_feedback.find({"session_id": sid})
+    feedbacks = await cursor.to_list(length=1000)
+
+    if not feedbacks:
+        return {
+            "average_rating": 0,
+            "total_count": 0,
+            "distribution": {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0},
+            "useful_comments": [],
+            "summary_bullets": [],
+            "raw_comment_count": 0,
+        }
+
+    total_count = len(feedbacks)
+    rating_sum = sum(f["rating"] for f in feedbacks)
+    average_rating = round(rating_sum / total_count, 1)
+
+    distribution = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
+    for f in feedbacks:
+        distribution[str(f["rating"])] += 1
+
+    comments = [f["comment"] for f in feedbacks if f.get("comment", "").strip()]
+    raw_comment_count = len(comments)
+
+    useful_comments = comments
+    summary_bullets = []
+
+    # Use Gemini to filter and summarize comments if available
+    if comments and _gemini_client:
+        try:
+            comment_list = "\n".join(f"- {c}" for c in comments)
+            prompt = (
+                "You are helping a professor improve their teaching. "
+                "Given these anonymous student comments from a lecture, "
+                "filter out unhelpful/spam comments and summarize the useful feedback "
+                "into 3-5 actionable bullet points.\n\n"
+                f"Comments:\n{comment_list}\n\n"
+                'Return ONLY valid JSON: {"useful_comments": ["comment1", ...], "summary_bullets": ["bullet1", ...]}'
+            )
+            response = _gemini_client.models.generate_content(
+                model="gemma-3-27b-it",
+                contents=prompt,
+            )
+            if response.text:
+                import json as _json
+                # Strip markdown code fences if present
+                text = response.text.strip()
+                if text.startswith("```"):
+                    text = re.sub(r"^```(?:json)?\s*", "", text)
+                    text = re.sub(r"\s*```$", "", text)
+                parsed = _json.loads(text)
+                useful_comments = parsed.get("useful_comments", comments)
+                summary_bullets = parsed.get("summary_bullets", [])
+        except Exception as e:
+            print(f"[Feedback] Gemini comment filtering failed: {e}")
+            # Fall back to returning all comments as-is
+
+    return {
+        "average_rating": average_rating,
+        "total_count": total_count,
+        "distribution": distribution,
+        "useful_comments": useful_comments,
+        "summary_bullets": summary_bullets,
+        "raw_comment_count": raw_comment_count,
     }

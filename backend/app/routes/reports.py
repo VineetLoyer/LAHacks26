@@ -355,6 +355,20 @@ async def generate_report(session_id: str):
         "generated_at": now,
     }
 
+    # Attach feedback summary if feedback exists
+    try:
+        feedback_cursor = db.session_feedback.find({"session_id": sid})
+        feedback_docs = await feedback_cursor.to_list(length=1000)
+        if feedback_docs:
+            fb_total = len(feedback_docs)
+            fb_avg = round(sum(f["rating"] for f in feedback_docs) / fb_total, 1)
+            report["feedback_summary"] = {
+                "average_rating": fb_avg,
+                "total_count": fb_total,
+            }
+    except Exception as e:
+        print(f"[Feedback] Failed to attach feedback to report (non-critical): {e}")
+
     # Upsert report (replace if already exists for this session)
     await db.reports.update_one(
         {"session_id": sid},
@@ -368,6 +382,36 @@ async def generate_report(session_id: str):
             "session_id": session_id,
             "report_available": True,
         }, room=session["code"])
+
+    # Auto-send email summaries to opted-in students (non-blocking)
+    try:
+        email_cursor = db.session_emails.find({"session_id": sid})
+        email_docs = await email_cursor.to_list(length=500)
+
+        if email_docs:
+            emails = [doc["email"] for doc in email_docs]
+
+            summary_text = await _generate_student_email_body(
+                session_title=session.get("title", "Untitled Session"),
+                report=report,
+                db=db,
+                session_id=sid,
+            )
+
+            # Log the emails that would be sent (actual Resend integration comes later)
+            print(f"\n{'='*60}")
+            print(f"POST-SESSION EMAIL SUMMARY - {session.get('title', 'Session')}")
+            print(f"{'='*60}")
+            print(f"Recipients ({len(emails)}): {', '.join(emails)}")
+            print(f"{'-'*60}")
+            print(summary_text)
+            print(f"{'='*60}\n")
+
+            # Delete email records after "sending" (privacy: store only for delivery)
+            await db.session_emails.delete_many({"session_id": sid})
+            print(f"[Email] Summary sent to {len(emails)} student(s), email records deleted.")
+    except Exception as e:
+        print(f"[Email] Auto-send summary failed (non-critical): {e}")
 
     # Call the Insight Report Agent on Agentverse (enrichment)
     # Demonstrates agent integration — agent generates its own narrative analysis
@@ -406,7 +450,7 @@ async def get_report(session_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    return {
+    result = {
         "id": str(report["session_id"]),
         "total_participants": report["total_participants"],
         "total_questions": report["total_questions"],
@@ -418,3 +462,6 @@ async def get_report(session_id: str):
         "summary": report["summary"],
         "generated_at": report["generated_at"].isoformat() if hasattr(report["generated_at"], "isoformat") else report["generated_at"],
     }
+    if "feedback_summary" in report:
+        result["feedback_summary"] = report["feedback_summary"]
+    return result

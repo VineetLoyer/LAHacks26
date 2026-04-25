@@ -27,7 +27,7 @@ async function transcribeWithElevenLabs(audioBlob: Blob): Promise<string> {
 
   const formData = new FormData();
   formData.append("file", audioBlob, "recording.webm");
-  formData.append("model_id", "scribe_v1");
+  formData.append("model_id", "scribe_v2");
 
   const resp = await fetch(
     "https://api.elevenlabs.io/v1/speech-to-text",
