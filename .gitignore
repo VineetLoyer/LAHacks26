@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+.next/
+out/
+dist/
+
+# Misc
+*.log
+
+# Ideation / spec / research files (not needed for demo)
+.kiro/
+LAHacks2023/
+LAHacks2024/
+LAHacks2025/
+Ideation.md
+AskSafe_BattlePlan.md

@@ -1,0 +1,8 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+python-socketio==5.12.1
+motor==3.7.0
+pydantic==2.11.3
+python-dotenv==1.1.0
+google-genai==1.14.0
+httpx==0.28.1
