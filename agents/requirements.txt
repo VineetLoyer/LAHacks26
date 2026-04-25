@@ -2,3 +2,4 @@ uagents==0.20.1
 python-dotenv==1.1.0
 google-genai==1.14.0
 httpx==0.28.1
+motor==3.7.0
