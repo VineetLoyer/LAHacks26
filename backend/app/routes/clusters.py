@@ -273,7 +273,7 @@ async def restore_cluster(cluster_id: str):
 
 @router.post("/address")
 async def address_cluster(req: AddressClusterRequest):
-    """Professor addresses a question cluster with AI-generated explanation."""
+    """Professor addresses a question cluster."""
     db = get_db()
     cluster = await db.clusters.find_one({"_id": ObjectId(req.cluster_id)})
     if not cluster:
@@ -281,14 +281,14 @@ async def address_cluster(req: AddressClusterRequest):
 
     session = await db.sessions.find_one({"_id": cluster["session_id"]})
 
-    # Get questions in this cluster
-    q_cursor = db.questions.find({"cluster_id": ObjectId(req.cluster_id)})
-    questions = await q_cursor.to_list(length=50)
-    q_texts = [q["text"] for q in questions]
-
     explanation = ""
-    if gemini_client:
-        # Build slide context for the questions in this cluster
+
+    # Only generate AI explanation for "explained_now" response type
+    if req.response_type == "explained_now" and gemini_client:
+        q_cursor = db.questions.find({"cluster_id": ObjectId(req.cluster_id)})
+        questions = await q_cursor.to_list(length=50)
+        q_texts = [q["text"] for q in questions]
+
         slide_contexts = session.get("slide_contexts", []) if session else []
         tagged_slides = set()
         for q in questions:
@@ -323,9 +323,15 @@ encouraging — these students were anxious about asking."""
         )
         explanation = response.text
 
+    # Determine cluster status based on response type
+    if req.response_type == "flagged_next_class":
+        new_status = ClusterStatus.flagged
+    else:
+        new_status = ClusterStatus.addressed
+
     update_data = {
-        "status": ClusterStatus.addressed,
-        "ai_explanation": explanation,
+        "status": new_status,
+        "ai_explanation": explanation if explanation else None,
         "response_type": req.response_type,
     }
     if req.custom_response:
@@ -336,8 +342,10 @@ encouraging — these students were anxious about asking."""
         {"$set": update_data},
     )
 
-    # Emit cluster_addressed Socket.IO event to the session room
-    if session:
+    # Only broadcast to students if the professor is actually responding
+    # (not for "flagged_next_class" — that's internal)
+    if session and req.response_type != "flagged_next_class":
+        broadcast_response = req.custom_response or explanation
         await sio.emit("cluster_addressed", {
             "cluster_id": req.cluster_id,
             "label": cluster["label"],
@@ -350,5 +358,5 @@ encouraging — these students were anxious about asking."""
         "cluster_id": req.cluster_id,
         "ai_explanation": explanation,
         "response_type": req.response_type,
-        "status": "addressed",
+        "status": new_status,
     }
