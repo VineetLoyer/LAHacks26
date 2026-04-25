@@ -1,3 +1,4 @@
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.config import MONGODB_URI, DB_NAME
 
@@ -7,7 +8,7 @@ db = None
 
 async def connect_db():
     global client, db
-    client = AsyncIOMotorClient(MONGODB_URI)
+    client = AsyncIOMotorClient(MONGODB_URI, tlsCAFile=certifi.where())
     db = client[DB_NAME]
     # Create indexes
     await db.sessions.create_index("code", unique=True)
