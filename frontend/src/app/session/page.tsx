@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { submitQuestion, submitCheckin, listClusters, upvoteCluster } from "@/lib/api";
 import { getSocket, joinRoom } from "@/lib/socket";
 import { BroadcastFeed, type Broadcast } from "@/components/broadcast-feed";
+import { WhisperButton } from "@/components/whisper-button";
 import { ArrowUpCircle } from "lucide-react";
 
 const STORAGE_KEY_PREFIX = "asksafe_questions_";
@@ -275,6 +276,10 @@ function SessionContent() {
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSubmitQuestion()}
+            />
+            <WhisperButton
+              onTranscript={(text) => setQuestion((prev) => (prev ? prev + " " + text : text))}
+              disabled={loading}
             />
             <Button onClick={handleSubmitQuestion} disabled={loading}>
               {loading ? "..." : "Send"}
