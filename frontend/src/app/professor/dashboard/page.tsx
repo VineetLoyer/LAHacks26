@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -78,8 +78,6 @@ function DashboardContent() {
   const [customResponse, setCustomResponse] = useState("");
   const [addressLoading, setAddressLoading] = useState(false);
 
-  const socketJoined = useRef(false);
-
   // --- Fetch initial data ---
   useEffect(() => {
     if (!sessionId) return;
@@ -105,13 +103,11 @@ function DashboardContent() {
 
   // --- Socket.IO setup ---
   useEffect(() => {
-    if (!sessionCode || socketJoined.current) return;
-    socketJoined.current = true;
+    if (!sessionCode) return;
 
     const socket = getSocket();
-    joinRoom(sessionCode, "professor");
 
-    socket.on("confusion_update", (data: { confusion_index: number; total_checkins: number; slide: number }) => {
+    const onConfusionUpdate = (data: { confusion_index: number; total_checkins: number; slide: number }) => {
       setConfusionIndex(data.confusion_index);
       setThreshold((prev) => {
         if (data.confusion_index > prev) {
@@ -122,27 +118,40 @@ function DashboardContent() {
         }
         return prev;
       });
-    });
+    };
 
-    socket.on("participant_count", (data: { count: number }) => {
+    const onParticipantCount = (data: { count: number }) => {
       setParticipantCount(data.count);
-    });
+    };
 
-    socket.on("question_submitted", (data: { total_questions: number }) => {
+    const onQuestionSubmitted = (data: { total_questions: number }) => {
       setQuestionCount(data.total_questions);
-    });
+    };
 
-    socket.on("cluster_upvoted", (data: { cluster_id: string; upvotes: number }) => {
+    const onClusterUpvoted = (data: { cluster_id: string; upvotes: number }) => {
       setClusters((prev) =>
         prev.map((c) => (c.id === data.cluster_id ? { ...c, upvotes: data.upvotes } : c))
       );
-    });
+    };
+
+    // Remove any previous listeners to avoid duplicates (React strict mode)
+    socket.off("confusion_update", onConfusionUpdate);
+    socket.off("participant_count", onParticipantCount);
+    socket.off("question_submitted", onQuestionSubmitted);
+    socket.off("cluster_upvoted", onClusterUpvoted);
+
+    socket.on("confusion_update", onConfusionUpdate);
+    socket.on("participant_count", onParticipantCount);
+    socket.on("question_submitted", onQuestionSubmitted);
+    socket.on("cluster_upvoted", onClusterUpvoted);
+
+    joinRoom(sessionCode, "professor");
 
     return () => {
-      socket.off("confusion_update");
-      socket.off("participant_count");
-      socket.off("question_submitted");
-      socket.off("cluster_upvoted");
+      socket.off("confusion_update", onConfusionUpdate);
+      socket.off("participant_count", onParticipantCount);
+      socket.off("question_submitted", onQuestionSubmitted);
+      socket.off("cluster_upvoted", onClusterUpvoted);
     };
   }, [sessionCode]);
 

@@ -64,7 +64,6 @@ function SessionContent() {
   useEffect(() => {
     if (!sessionCode) return;
 
-    joinRoom(sessionCode, "student");
     const socket = getSocket();
 
     const handleCheckinRequested = (data: { slide?: number }) => {
@@ -88,8 +87,14 @@ function SessionContent() {
       setBroadcasts((prev) => [broadcast, ...prev]);
     };
 
+    // Remove previous listeners to avoid duplicates (React strict mode)
+    socket.off("checkin_requested", handleCheckinRequested);
+    socket.off("cluster_addressed", handleClusterAddressed);
+
     socket.on("checkin_requested", handleCheckinRequested);
     socket.on("cluster_addressed", handleClusterAddressed);
+
+    joinRoom(sessionCode, "student");
 
     return () => {
       socket.off("checkin_requested", handleCheckinRequested);

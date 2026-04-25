@@ -22,7 +22,7 @@ async def disconnect(sid):
             members.discard(sid)
             live_count = len(members)
             # Update MongoDB and compute emitted count
-            if db:
+            if db is not None:
                 session = await db.sessions.find_one({"code": code})
                 if session:
                     demo_count = session.get("demo_participant_count", 0)
@@ -44,13 +44,13 @@ async def join_room(sid, data):
     code = data.get("code")
     role = data.get("role", "student")  # "student" or "professor"
     if code:
-        sio.enter_room(sid, code)
+        await sio.enter_room(sid, code)
         session_rooms.setdefault(code, set()).add(sid)
         live_count = len(session_rooms[code])
 
         db = get_db()
         emitted_count = live_count
-        if db:
+        if db is not None:
             session = await db.sessions.find_one({"code": code})
             if session:
                 demo_count = session.get("demo_participant_count", 0)
@@ -72,14 +72,14 @@ async def leave_room(sid, data):
     """Leave a session room."""
     code = data.get("code")
     if code:
-        sio.leave_room(sid, code)
+        await sio.leave_room(sid, code)
         if code in session_rooms:
             session_rooms[code].discard(sid)
             live_count = len(session_rooms[code])
 
             db = get_db()
             emitted_count = live_count
-            if db:
+            if db is not None:
                 session = await db.sessions.find_one({"code": code})
                 if session:
                     demo_count = session.get("demo_participant_count", 0)
