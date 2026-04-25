@@ -104,7 +104,7 @@ Return ONLY valid JSON (no markdown fences) as an array of clusters:
         return {"clusters": [], "message": "Gemini API key not configured"}
 
     response = gemini_client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemma-3-27b-it",
         contents=prompt,
     )
 
@@ -245,7 +245,7 @@ confusion. Include a helpful analogy or example. Keep the tone warm and
 encouraging — these students were anxious about asking."""
 
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemma-3-27b-it",
             contents=prompt,
         )
         explanation = response.text

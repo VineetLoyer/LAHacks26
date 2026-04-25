@@ -91,7 +91,7 @@ Keep the tone warm and constructive."""
 
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemma-3-27b-it",
             contents=prompt,
         )
         return response.text

@@ -137,7 +137,7 @@ async def _run_gemini_clustering(prompt: str) -> List[dict]:
         api_key = os.getenv("GEMINI_API_KEY", "")
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-2.0-flash", contents=prompt
+            model="gemma-3-27b-it", contents=prompt
         )
         raw = response.text.strip()
         if raw.startswith("```"):

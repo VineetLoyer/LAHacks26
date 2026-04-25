@@ -20,7 +20,7 @@ app = FastAPI(title="AskSafe API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "http://localhost:3000"],
+    allow_origins=["*"],  # Allow all origins for hackathon demo
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

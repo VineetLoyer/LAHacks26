@@ -1,3 +1,4 @@
+import os
 import uvicorn
 
 if __name__ == "__main__":
@@ -5,4 +6,5 @@ if __name__ == "__main__":
     import app.socket_events  # noqa: F401
     from app.main import sio_app
 
-    uvicorn.run(sio_app, host="0.0.0.0", port=8000, reload=False)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(sio_app, host="0.0.0.0", port=port, reload=False)
