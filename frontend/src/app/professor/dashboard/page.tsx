@@ -88,6 +88,9 @@ function DashboardContent() {
   const [addressResponseType, setAddressResponseType] = useState("explained_now");
   const [customResponse, setCustomResponse] = useState("");
   const [addressLoading, setAddressLoading] = useState(false);
+  const [aiDraft, setAiDraft] = useState("");
+  const [aiDraftLoading, setAiDraftLoading] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
 
   // Report state
   const [report, setReport] = useState<ReportData | null>(null);
@@ -223,26 +226,62 @@ function DashboardContent() {
     setAddressingCluster(cluster);
     setAddressResponseType("explained_now");
     setCustomResponse("");
+    setAiDraft("");
+    setAiDraftLoading(false);
+    setLinkUrl("");
   }, []);
+
+  const handleGenerateAiDraft = useCallback(async () => {
+    if (!addressingCluster) return;
+    setAiDraftLoading(true);
+    try {
+      // Call address with a dry-run-like approach — we'll use the result as a draft
+      const result = await addressCluster({
+        cluster_id: addressingCluster.id,
+        response_type: "explained_now",
+      });
+      const draft = result.ai_explanation || "";
+      setAiDraft(draft);
+      setCustomResponse(draft);
+      // Update the cluster status locally since the backend already marked it
+      setClusters((prev) =>
+        prev.map((c) =>
+          c.id === addressingCluster.id
+            ? { ...c, status: "addressed", ai_explanation: draft, response_type: "explained_now" }
+            : c
+        )
+      );
+    } catch {
+      setAiDraft("Failed to generate AI suggestion. You can type your own response.");
+    } finally {
+      setAiDraftLoading(false);
+    }
+  }, [addressingCluster]);
 
   const handleConfirmAddress = useCallback(async () => {
     if (!addressingCluster) return;
     setAddressLoading(true);
     try {
+      // Build the response based on selected type
+      let responseText = customResponse;
+      if (addressResponseType === "send_link") {
+        responseText = linkUrl ? `📎 Resource: ${linkUrl}${customResponse ? `\n\n${customResponse}` : ""}` : customResponse;
+      }
+
       const result = await addressCluster({
         cluster_id: addressingCluster.id,
         response_type: addressResponseType,
-        custom_response: addressResponseType === "text_response" ? customResponse : undefined,
+        custom_response: responseText || undefined,
       });
       setClusters((prev) =>
         prev.map((c) =>
           c.id === addressingCluster.id
             ? {
                 ...c,
-                status: "addressed",
+                status: addressResponseType === "flagged_next_class" ? "flagged" : "addressed",
                 ai_explanation: result.ai_explanation,
                 response_type: result.response_type,
-                professor_response: addressResponseType === "text_response" ? customResponse : null,
+                professor_response: responseText || null,
               }
             : c
         )
@@ -253,7 +292,7 @@ function DashboardContent() {
     } finally {
       setAddressLoading(false);
     }
-  }, [addressingCluster, addressResponseType, customResponse]);
+  }, [addressingCluster, addressResponseType, customResponse, linkUrl]);
 
   const handleDismissSpike = useCallback(() => {
     setSpikeAlert({ visible: false, message: "" });
@@ -725,46 +764,98 @@ function DashboardContent() {
               </DialogDescription>
             </DialogHeader>
 
-            {addressingCluster?.ai_explanation && (
-              <div className="rounded-lg bg-muted p-3 text-sm">
-                <p className="font-medium mb-1">AI Explanation</p>
-                <p className="text-muted-foreground">
-                  {addressingCluster.ai_explanation}
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <p className="text-sm font-medium">Response Type</p>
-              <div className="space-y-2">
+            <div className="space-y-4">
+              <p className="text-sm font-medium">How do you want to respond?</p>
+              <div className="grid grid-cols-2 gap-2">
                 {[
-                  { value: "explained_now", label: "Explain Now" },
-                  { value: "flagged_next_class", label: "Flag for Next Class" },
-                  { value: "text_response", label: "Custom Text Response" },
+                  { value: "explained_now", label: "💡 Answer Now", desc: "AI drafts a response you can edit" },
+                  { value: "send_link", label: "🔗 Send Link", desc: "Share a video, article, or resource" },
+                  { value: "flagged_next_class", label: "📌 Mark for Later", desc: "Address next session" },
+                  { value: "text_response", label: "✏️ Type Response", desc: "Write your own answer" },
                 ].map((option) => (
-                  <label
+                  <button
                     key={option.value}
-                    className="flex items-center gap-2 cursor-pointer"
+                    onClick={() => {
+                      setAddressResponseType(option.value);
+                      if (option.value !== "explained_now") setAiDraft("");
+                    }}
+                    className={`text-left p-3 rounded-lg border transition-colors ${
+                      addressResponseType === option.value
+                        ? "border-primary bg-primary/5"
+                        : "border-muted hover:border-muted-foreground/30"
+                    }`}
                   >
-                    <input
-                      type="radio"
-                      name="response_type"
-                      value={option.value}
-                      checked={addressResponseType === option.value}
-                      onChange={(e) => setAddressResponseType(e.target.value)}
-                      className="accent-primary"
-                    />
-                    <span className="text-sm">{option.label}</span>
-                  </label>
+                    <p className="text-sm font-medium">{option.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{option.desc}</p>
+                  </button>
                 ))}
               </div>
 
+              {/* Answer Now — AI Draft */}
+              {addressResponseType === "explained_now" && (
+                <div className="space-y-2">
+                  {!aiDraft && !aiDraftLoading && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleGenerateAiDraft}
+                      className="w-full"
+                    >
+                      <Sparkles className="h-4 w-4 mr-1" />
+                      Generate AI Suggestion
+                    </Button>
+                  )}
+                  {aiDraftLoading && (
+                    <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      AI is drafting a response...
+                    </div>
+                  )}
+                  {aiDraft && !aiDraftLoading && (
+                    <>
+                      <p className="text-xs text-muted-foreground">AI suggestion — edit before sending:</p>
+                      <textarea
+                        className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        value={customResponse}
+                        onChange={(e) => setCustomResponse(e.target.value)}
+                        placeholder="Edit the AI suggestion or write your own..."
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Send Link */}
+              {addressResponseType === "send_link" && (
+                <div className="space-y-2">
+                  <Input
+                    placeholder="Paste URL (YouTube, article, docs...)"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Optional note for students..."
+                    value={customResponse}
+                    onChange={(e) => setCustomResponse(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Type Response */}
               {addressResponseType === "text_response" && (
-                <Input
-                  placeholder="Type your response..."
+                <textarea
+                  className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  placeholder="Type your response to students..."
                   value={customResponse}
                   onChange={(e) => setCustomResponse(e.target.value)}
                 />
+              )}
+
+              {/* Mark for Later — just a confirmation message */}
+              {addressResponseType === "flagged_next_class" && (
+                <p className="text-sm text-muted-foreground bg-muted rounded-lg p-3">
+                  This cluster will be flagged and included in the session report as a topic to revisit next class.
+                </p>
               )}
             </div>
 
@@ -778,8 +869,10 @@ function DashboardContent() {
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Sending...
                   </>
+                ) : addressResponseType === "flagged_next_class" ? (
+                  "Flag for Later"
                 ) : (
-                  "Confirm & Broadcast"
+                  "Send to Students"
                 )}
               </Button>
             </DialogFooter>

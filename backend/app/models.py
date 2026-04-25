@@ -20,6 +20,7 @@ class ResponseType(str, Enum):
     explained_now = "explained_now"
     flagged_next_class = "flagged_next_class"
     text_response = "text_response"
+    send_link = "send_link"
 
 
 # --- Request Models ---
