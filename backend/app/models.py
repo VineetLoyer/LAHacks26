@@ -52,3 +52,8 @@ class AddressClusterRequest(BaseModel):
     cluster_id: str
     response_type: ResponseType
     custom_response: Optional[str] = None
+
+
+class VerifyWorldIdRequest(BaseModel):
+    session_code: str
+    proof: dict  # IDKit proof payload (merkle_root, nullifier_hash, proof, verification_level)

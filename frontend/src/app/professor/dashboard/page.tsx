@@ -18,6 +18,7 @@ import { ConfusionGauge } from "@/components/confusion-gauge";
 import { AnimatedCounter } from "@/components/animated-counter";
 import { LiveIndicator } from "@/components/live-indicator";
 import { SpikeAlert } from "@/components/spike-alert";
+import { ConfusionChart } from "@/components/confusion-chart";
 import {
   getSessionStats,
   getConfusionStats,
@@ -117,6 +118,22 @@ function DashboardContent() {
           });
         }
         return prev;
+      });
+
+      // Update timeline data in real-time
+      setTimeline((prev) => {
+        const existing = prev.find((entry) => entry.slide === data.slide);
+        if (existing) {
+          return prev.map((entry) =>
+            entry.slide === data.slide
+              ? { ...entry, confusion_pct: data.confusion_index, responses: data.total_checkins }
+              : entry
+          );
+        }
+        return [
+          ...prev,
+          { slide: data.slide, confusion_pct: data.confusion_index, avg_rating: 0, responses: data.total_checkins },
+        ].sort((a, b) => a.slide - b.slide);
       });
     };
 
@@ -313,6 +330,29 @@ function DashboardContent() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Confusion Timeline */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Confusion Timeline</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {timeline.length === 0 ? (
+              <p className="text-muted-foreground text-center py-12">
+                No check-in data yet
+              </p>
+            ) : (
+              <ConfusionChart
+                data={timeline.map((entry) => ({
+                  slide: entry.slide,
+                  confusion_pct: entry.confusion_pct,
+                  responses: entry.responses,
+                }))}
+                threshold={threshold}
+              />
+            )}
+          </CardContent>
+        </Card>
 
         {/* Controls Row */}
         <Card>

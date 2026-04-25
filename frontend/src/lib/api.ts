@@ -41,6 +41,7 @@ export function joinSession(code: string) {
     title: string;
     anonymous_mode: boolean;
     current_slide: number;
+    demo_mode: boolean;
   }>(`/api/sessions/join/${code.toUpperCase()}`);
 }
 
@@ -142,4 +143,15 @@ export function addressCluster(data: {
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+// --- Auth ---
+export function verifyWorldId(data: {
+  proof: object;
+  session_code: string;
+}) {
+  return request<{ verified: boolean; simulated?: boolean }>(
+    "/api/auth/verify-world-id",
+    { method: "POST", body: JSON.stringify(data) }
+  );
 }

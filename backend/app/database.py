@@ -14,6 +14,7 @@ async def connect_db():
     await db.checkins.create_index("session_id")
     await db.questions.create_index("session_id")
     await db.clusters.create_index("session_id")
+    await db.verifications.create_index([("session_id", 1), ("nullifier_hash", 1)], unique=True)
     print("Connected to MongoDB")
 
 
