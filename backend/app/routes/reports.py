@@ -383,7 +383,7 @@ async def generate_report(session_id: str):
             "report_available": True,
         }, room=session["code"])
 
-    # Auto-send email summaries to opted-in students (non-blocking)
+    # Auto-send email summaries to opted-in students via Resend
     try:
         email_cursor = db.session_emails.find({"session_id": sid})
         email_docs = await email_cursor.to_list(length=500)
@@ -398,16 +398,28 @@ async def generate_report(session_id: str):
                 session_id=sid,
             )
 
-            # Log the emails that would be sent (actual Resend integration comes later)
-            print(f"\n{'='*60}")
-            print(f"POST-SESSION EMAIL SUMMARY - {session.get('title', 'Session')}")
-            print(f"{'='*60}")
-            print(f"Recipients ({len(emails)}): {', '.join(emails)}")
-            print(f"{'-'*60}")
-            print(summary_text)
-            print(f"{'='*60}\n")
+            # Send via Resend if API key is configured
+            from app.config import RESEND_API_KEY
+            if RESEND_API_KEY:
+                try:
+                    import resend
+                    resend.api_key = RESEND_API_KEY
 
-            # Delete email records after "sending" (privacy: store only for delivery)
+                    resend.Emails.send({
+                        "from": "AskSafe <onboarding@resend.dev>",
+                        "to": emails,
+                        "subject": f"Session Summary: {session.get('title', 'Your Lecture')}",
+                        "text": summary_text,
+                    })
+                    print(f"[Email] Sent summary via Resend to {len(emails)} student(s)")
+                except Exception as e:
+                    print(f"[Email] Resend delivery failed: {e}")
+            else:
+                # Fallback: log to console
+                print(f"[Email] No RESEND_API_KEY — logging {len(emails)} email(s) to console")
+                print(summary_text[:200] + "...")
+
+            # Delete email records after sending (privacy: store only for delivery)
             await db.session_emails.delete_many({"session_id": sid})
             print(f"[Email] Summary sent to {len(emails)} student(s), email records deleted.")
     except Exception as e:

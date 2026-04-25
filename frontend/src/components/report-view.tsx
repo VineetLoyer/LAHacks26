@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ReportData } from "@/lib/api";
+import { getFeedbackSummary } from "@/lib/api";
 import {
   Users,
   MessageSquare,
@@ -14,18 +16,67 @@ import {
   Sparkles,
   Download,
   Star,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
+
+interface FeedbackData {
+  average_rating: number;
+  total_count: number;
+  distribution: Record<string, number>;
+  useful_comments: string[];
+  summary_bullets: string[];
+  raw_comment_count: number;
+}
 
 interface ReportViewProps {
   report: ReportData;
   sessionTitle?: string;
+  sessionId?: string;
 }
 
-export function ReportView({ report, sessionTitle }: ReportViewProps) {
+export function ReportView({ report, sessionTitle, sessionId }: ReportViewProps) {
+  const [liveFeedback, setLiveFeedback] = useState<FeedbackData | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+
+  const fetchFeedback = useCallback(async () => {
+    if (!sessionId) return;
+    setFeedbackLoading(true);
+    try {
+      const data = await getFeedbackSummary(sessionId);
+      setLiveFeedback(data);
+    } catch {
+      // Non-blocking — keep showing whatever we have
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }, [sessionId]);
+
+  // Fetch live feedback on mount
+  useEffect(() => {
+    fetchFeedback();
+  }, [fetchFeedback]);
+
   const resolutionRate =
     report.clusters_total > 0
       ? Math.round((report.clusters_addressed / report.clusters_total) * 100)
       : 0;
+
+  // Use live feedback if available, fall back to report's feedback_summary
+  const feedback: FeedbackData | null = liveFeedback
+    ? liveFeedback
+    : report.feedback_summary && report.feedback_summary.total_count > 0
+      ? {
+          average_rating: report.feedback_summary.average_rating,
+          total_count: report.feedback_summary.total_count,
+          distribution: {},
+          useful_comments: [],
+          summary_bullets: [],
+          raw_comment_count: 0,
+        }
+      : null;
+
+  const hasFeedback = feedback !== null && feedback.total_count > 0;
 
   return (
     <div className="space-y-6" id="report-print-content">
@@ -227,33 +278,100 @@ ${report.flagged_for_next_lecture.length > 0 ? `<div class="sec"><div class="st"
         </CardContent>
       </Card>
 
-      {/* Student Feedback Summary */}
-      {report.feedback_summary && report.feedback_summary.total_count > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+      {/* Student Feedback — Live */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between text-base">
+            <span className="flex items-center gap-2">
               <Star className="h-4 w-4 text-yellow-500" />
               Student Feedback
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl font-bold">
-                {report.feedback_summary.average_rating}
-              </span>
-              <span className="text-lg tracking-wide" aria-label={`${report.feedback_summary.average_rating} out of 5 stars`}>
-                {Array.from({ length: 5 }, (_, i) =>
-                  i < Math.round(report.feedback_summary!.average_rating) ? "★" : "☆"
-                ).join("")}
-              </span>
-              <span className="text-sm text-muted-foreground">/ 5</span>
-            </div>
+            </span>
+            {sessionId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={fetchFeedback}
+                disabled={feedbackLoading}
+                className="h-8 px-2"
+              >
+                {feedbackLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                <span className="ml-1 text-xs">Refresh</span>
+              </Button>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!hasFeedback ? (
             <p className="text-sm text-muted-foreground">
-              Based on {report.feedback_summary.total_count} student{report.feedback_summary.total_count !== 1 ? "s" : ""}
+              No feedback submitted yet — students can rate the session after it ends.
             </p>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <>
+              {/* Star rating */}
+              <div className="flex items-center gap-3">
+                <span className="text-2xl font-bold">
+                  {feedback.average_rating}
+                </span>
+                <span
+                  className="text-lg tracking-wide"
+                  aria-label={`${feedback.average_rating} out of 5 stars`}
+                >
+                  {Array.from({ length: 5 }, (_, i) =>
+                    i < Math.round(feedback.average_rating) ? "★" : "☆"
+                  ).join("")}
+                </span>
+                <span className="text-sm text-muted-foreground">/ 5</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Based on {feedback.total_count} student
+                {feedback.total_count !== 1 ? "s" : ""}
+              </p>
+
+              {/* AI Insights (summary bullets) */}
+              {feedback.summary_bullets && feedback.summary_bullets.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                    AI Insights
+                  </p>
+                  <ul className="space-y-1.5">
+                    {feedback.summary_bullets.map((bullet, i) => (
+                      <li
+                        key={i}
+                        className="flex items-start gap-2 text-sm text-muted-foreground"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-1.5" />
+                        {bullet}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Useful student comments */}
+              {feedback.useful_comments && feedback.useful_comments.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Student Comments</p>
+                  <div className="space-y-2">
+                    {feedback.useful_comments.map((comment, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground italic"
+                      >
+                        &ldquo;{comment}&rdquo;
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

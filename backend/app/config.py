@@ -11,3 +11,6 @@ DB_NAME = "asksafe"
 # World ID verification
 WORLD_APP_ID = os.getenv("WORLD_APP_ID", "")
 WORLD_ACTION = os.getenv("WORLD_ACTION", "verify-human")
+
+# Resend email
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")

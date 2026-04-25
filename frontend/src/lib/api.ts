@@ -256,3 +256,14 @@ export function submitFeedback(sessionId: string, data: { rating: number; commen
     body: JSON.stringify(data),
   });
 }
+
+export function getFeedbackSummary(sessionId: string) {
+  return request<{
+    average_rating: number;
+    total_count: number;
+    distribution: Record<string, number>;
+    useful_comments: string[];
+    summary_bullets: string[];
+    raw_comment_count: number;
+  }>(`/api/sessions/${sessionId}/feedback-summary`);
+}

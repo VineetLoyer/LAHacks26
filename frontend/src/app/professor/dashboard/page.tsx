@@ -703,7 +703,7 @@ function DashboardContent() {
               </DialogDescription>
             </DialogHeader>
             {report && (
-              <ReportView report={report} sessionTitle={sessionTitle} />
+              <ReportView report={report} sessionTitle={sessionTitle} sessionId={sessionId} />
             )}
             <DialogFooter showCloseButton />
           </DialogContent>
