@@ -13,16 +13,16 @@ export default function Home() {
           Ask<span className="text-emerald-500">Safe</span>
         </h1>
         <p className="text-xl text-muted-foreground mb-2">
-          Transform silent anxiety into engaged, data-driven learning.
+          Transform silent anxiety into engaged, data-driven conversations.
         </p>
         <p className="text-muted-foreground mb-8">
           Anonymous Q&amp;A with real-time AI confusion detection &amp;
-          post-lecture insights.
+          post-session insights.
         </p>
         <div className="flex gap-4 justify-center">
           <Link href="/professor">
             <Button size="lg" className="text-lg px-8">
-              I&apos;m a Professor
+              I&apos;m a Host
             </Button>
           </Link>
           <Link href="/join">
@@ -43,7 +43,7 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">
-              Students ask questions without fear. World ID verifies
+              Participants ask questions without fear. World ID verifies
               you&apos;re human — not who you are.
             </p>
           </CardContent>
@@ -58,7 +58,7 @@ export default function Home() {
           <CardContent>
             <p className="text-muted-foreground">
               Instead of 1000 similar questions, AI groups them into
-              actionable topic clusters professors can address.
+              actionable topic clusters hosts can address.
             </p>
           </CardContent>
         </Card>

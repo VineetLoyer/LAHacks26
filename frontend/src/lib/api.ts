@@ -24,6 +24,17 @@ export function createSession(data: {
   );
 }
 
+export function getSessionStats(sessionId: string) {
+  return request<{
+    confusion_index: number;
+    total_questions: number;
+    participant_count: number;
+    demo_mode: boolean;
+    confusion_threshold: number;
+    cluster_count: number;
+  }>(`/api/sessions/${sessionId}/stats`);
+}
+
 export function joinSession(code: string) {
   return request<{
     id: string;

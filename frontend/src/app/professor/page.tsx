@@ -80,7 +80,7 @@ export default function ProfessorPage() {
               className="h-4 w-4"
             />
             <label htmlFor="anon" className="text-sm">
-              Anonymous Mode (no student data stored)
+              Anonymous Mode (no participant data stored)
             </label>
           </div>
 

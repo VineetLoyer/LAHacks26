@@ -38,7 +38,7 @@ export default function JoinPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Join a Session</CardTitle>
           <p className="text-muted-foreground">
-            Enter the code your professor shared
+            Enter the code your host shared
           </p>
         </CardHeader>
         <CardContent className="space-y-4">

@@ -128,3 +128,61 @@
     @apply font-sans;
   }
 }
+
+/* Check-in modal slide-up animation */
+@keyframes checkin-slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.checkin-slide-up {
+  animation: checkin-slide-up 0.35s ease-out forwards;
+}
+
+/* Broadcast card slide-in animation */
+@keyframes broadcast-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.broadcast-slide-in {
+  animation: broadcast-slide-in 0.4s ease-out forwards;
+}
+
+/* Submitted toast fade */
+@keyframes toast-fade {
+  0% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.toast-fade {
+  animation: toast-fade 2s ease-out forwards;
+}
+
+/* Emoji hover scale */
+.emoji-btn {
+  transition: transform 0.15s ease;
+}
+
+.emoji-btn:hover {
+  transform: scale(1.2);
+}
