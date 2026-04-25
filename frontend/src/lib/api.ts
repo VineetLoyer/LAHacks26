@@ -17,6 +17,7 @@ export function createSession(data: {
   title: string;
   anonymous_mode: boolean;
   confusion_threshold: number;
+  demo_mode?: boolean;
 }) {
   return request<{ id: string; code: string; title: string }>(
     "/api/sessions/create",

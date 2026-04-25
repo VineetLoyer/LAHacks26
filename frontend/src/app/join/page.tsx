@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { joinSession, verifyWorldId } from "@/lib/api";
 import WorldIdGate from "@/components/world-id-gate";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 
 type SessionInfo = {
   id: string;
@@ -80,34 +82,53 @@ export default function JoinPage() {
   // Step 1: Enter code UI
   if (step === "enter-code") {
     return (
-      <main className="flex items-center justify-center min-h-screen p-8">
+      <main className="flex flex-col items-center justify-center min-h-screen p-8">
+        {/* Branding */}
+        <Link href="/" className="mb-8 text-center group">
+          <h2 className="text-3xl font-bold tracking-tight">
+            Ask<span className="text-primary">Safe</span>
+          </h2>
+          <p className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground transition-colors">
+            Anonymous Q&amp;A for Live Lectures
+          </p>
+        </Link>
+
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Join a Session</CardTitle>
             <p className="text-muted-foreground">
-              Enter the code your host shared
+              Enter the code your professor shared
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input
-              placeholder="Enter session code (e.g. ABC123)"
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              maxLength={6}
-              className="text-center text-2xl font-mono tracking-widest"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleJoin();
-              }}
-            />
-            {error && <p className="text-sm text-red-500">{error}</p>}
+            <div>
+              <Input
+                placeholder="ABC123"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                maxLength={6}
+                className="text-center text-3xl font-mono tracking-[0.3em] uppercase h-14"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleJoin();
+                }}
+              />
+              <p className="text-xs text-muted-foreground/70 text-center mt-2">
+                Enter the 6-character code shared by your professor
+              </p>
+            </div>
+            {error && <p className="text-sm text-red-500 text-center">{error}</p>}
             <Button
               onClick={handleJoin}
               disabled={loading}
-              className="w-full"
+              className="w-full bg-primary hover:bg-primary/90"
               size="lg"
             >
               {loading ? "Joining..." : "Join Session"}
             </Button>
+            <div className="flex items-center justify-center gap-1.5 pt-1">
+              <ShieldCheck className="h-3.5 w-3.5 text-primary/70" />
+              <span className="text-xs text-muted-foreground/70">Anonymous &amp; Secure</span>
+            </div>
           </CardContent>
         </Card>
       </main>
@@ -116,7 +137,7 @@ export default function JoinPage() {
 
   // Step 2: World ID verification
   return (
-    <main className="flex items-center justify-center min-h-screen p-8">
+    <main className="flex flex-col items-center justify-center min-h-screen p-8">
       <div className="w-full max-w-md space-y-4">
         {/* Back button */}
         <button
@@ -124,16 +145,20 @@ export default function JoinPage() {
             setStep("enter-code");
             setVerifyError("");
           }}
-          className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+          className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
         >
-          ← Back to code entry
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to code entry
         </button>
 
         {/* Session info */}
         {sessionInfo && (
           <div className="text-center mb-2">
             <p className="text-sm text-muted-foreground">
-              Joining: <span className="font-medium text-foreground">{sessionInfo.title}</span>
+              Joining:{" "}
+              <span className="font-medium text-foreground">
+                {sessionInfo.title}
+              </span>
             </p>
           </div>
         )}
