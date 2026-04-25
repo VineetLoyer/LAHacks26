@@ -198,6 +198,32 @@ async def upvote_cluster(cluster_id: str):
     return {"status": "upvoted"}
 
 
+@router.patch("/{cluster_id}/hide")
+async def hide_cluster(cluster_id: str):
+    """Hide a question cluster (moderation)."""
+    db = get_db()
+    result = await db.clusters.update_one(
+        {"_id": ObjectId(cluster_id)},
+        {"$set": {"status": ClusterStatus.hidden}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+    return {"cluster_id": cluster_id, "status": "hidden"}
+
+
+@router.patch("/{cluster_id}/restore")
+async def restore_cluster(cluster_id: str):
+    """Restore a hidden cluster back to pending."""
+    db = get_db()
+    result = await db.clusters.update_one(
+        {"_id": ObjectId(cluster_id)},
+        {"$set": {"status": ClusterStatus.pending}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+    return {"cluster_id": cluster_id, "status": "pending"}
+
+
 @router.post("/address")
 async def address_cluster(req: AddressClusterRequest):
     """Professor addresses a question cluster with AI-generated explanation."""

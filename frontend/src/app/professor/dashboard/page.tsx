@@ -25,6 +25,8 @@ import {
   listClusters,
   generateClusters,
   addressCluster,
+  hideCluster,
+  restoreCluster,
   generateReport,
 } from "@/lib/api";
 import type { ReportData } from "@/lib/api";
@@ -39,6 +41,9 @@ import {
   ArrowUpCircle,
   Radio,
   StopCircle,
+  EyeOff,
+  Eye,
+  RotateCcw,
 } from "lucide-react";
 
 interface ClusterData {
@@ -88,6 +93,7 @@ function DashboardContent() {
   const [reportLoading, setReportLoading] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [sessionTitle, setSessionTitle] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
 
   // --- Fetch initial data ---
   useEffect(() => {
@@ -250,6 +256,28 @@ function DashboardContent() {
     setSpikeAlert({ visible: false, message: "" });
   }, []);
 
+  const handleHideCluster = useCallback(async (clusterId: string) => {
+    try {
+      await hideCluster(clusterId);
+      setClusters((prev) =>
+        prev.map((c) => (c.id === clusterId ? { ...c, status: "hidden" } : c))
+      );
+    } catch {
+      // silently fail
+    }
+  }, []);
+
+  const handleRestoreCluster = useCallback(async (clusterId: string) => {
+    try {
+      await restoreCluster(clusterId);
+      setClusters((prev) =>
+        prev.map((c) => (c.id === clusterId ? { ...c, status: "pending" } : c))
+      );
+    } catch {
+      // silently fail
+    }
+  }, []);
+
   const handleGenerateReport = useCallback(async () => {
     if (!sessionId) return;
     setReportLoading(true);
@@ -264,8 +292,13 @@ function DashboardContent() {
     }
   }, [sessionId]);
 
-  // Sort clusters by question_count descending
-  const sortedClusters = [...clusters].sort((a, b) => b.question_count - a.question_count);
+  // Split clusters into visible and hidden, sort by question_count descending
+  const visibleClusters = [...clusters]
+    .filter((c) => c.status !== "hidden")
+    .sort((a, b) => b.question_count - a.question_count);
+  const hiddenClusters = [...clusters]
+    .filter((c) => c.status === "hidden")
+    .sort((a, b) => b.question_count - a.question_count);
 
   return (
     <main className="min-h-screen p-6">
@@ -432,8 +465,30 @@ function DashboardContent() {
 
         {/* Clusters Section */}
         <div>
-          <h2 className="text-xl font-semibold mb-4">Question Clusters</h2>
-          {sortedClusters.length === 0 ? (
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Question Clusters</h2>
+            {hiddenClusters.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowHidden((prev) => !prev)}
+                className="text-muted-foreground"
+              >
+                {showHidden ? (
+                  <>
+                    <EyeOff className="h-4 w-4 mr-1" />
+                    Hide Hidden ({hiddenClusters.length})
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-4 w-4 mr-1" />
+                    Show Hidden ({hiddenClusters.length})
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+          {visibleClusters.length === 0 && hiddenClusters.length === 0 ? (
             <Card>
               <CardContent>
                 <p className="text-muted-foreground text-center py-12">
@@ -444,76 +499,141 @@ function DashboardContent() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {sortedClusters.map((cluster, index) => (
-                <Card
-                  key={cluster.id}
-                  className={
-                    cluster.status === "addressed"
-                      ? "opacity-70 border-green-500/30"
-                      : ""
-                  }
-                  style={{
-                    animation: `fadeInUp 0.4s ease-out ${index * 100}ms both`,
-                  }}
-                >
-                  <style>{`
-                    @keyframes fadeInUp {
-                      from {
-                        opacity: 0;
-                        transform: translateY(12px);
-                      }
-                      to {
-                        opacity: 1;
-                        transform: translateY(0);
-                      }
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {visibleClusters.map((cluster, index) => (
+                  <Card
+                    key={cluster.id}
+                    className={
+                      cluster.status === "addressed"
+                        ? "opacity-70 border-green-500/30"
+                        : ""
                     }
-                  `}</style>
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between text-base">
-                      <span className="flex items-center gap-2">
-                        {cluster.status === "addressed" && (
-                          <CheckCircle2 className="h-4 w-4 text-green-500" />
-                        )}
-                        {cluster.label}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={cluster.on_topic ? "default" : "secondary"}>
-                          {cluster.on_topic ? "On Topic" : "Off Topic"}
-                        </Badge>
-                      </div>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <p className="text-sm text-muted-foreground italic">
-                      &ldquo;{cluster.representative_question}&rdquo;
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>{cluster.question_count} questions</span>
-                        <span className="flex items-center gap-1">
-                          <ArrowUpCircle className="h-3.5 w-3.5" />
-                          {cluster.upvotes}
+                    style={{
+                      animation: `fadeInUp 0.4s ease-out ${index * 100}ms both`,
+                    }}
+                  >
+                    <style>{`
+                      @keyframes fadeInUp {
+                        from {
+                          opacity: 0;
+                          transform: translateY(12px);
+                        }
+                        to {
+                          opacity: 1;
+                          transform: translateY(0);
+                        }
+                      }
+                    `}</style>
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between text-base">
+                        <span className="flex items-center gap-2">
+                          {cluster.status === "addressed" && (
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          )}
+                          {cluster.label}
                         </span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={cluster.on_topic ? "default" : "secondary"}>
+                            {cluster.on_topic ? "On Topic" : "Off Topic"}
+                          </Badge>
+                        </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-sm text-muted-foreground italic">
+                        &ldquo;{cluster.representative_question}&rdquo;
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span>{cluster.question_count} questions</span>
+                          <span className="flex items-center gap-1">
+                            <ArrowUpCircle className="h-3.5 w-3.5" />
+                            {cluster.upvotes}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {cluster.status === "pending" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleHideCluster(cluster.id)}
+                                className="text-muted-foreground h-8 px-2"
+                              >
+                                <EyeOff className="h-3.5 w-3.5 mr-1" />
+                                Hide
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleAddressCluster(cluster)}
+                              >
+                                Address
+                              </Button>
+                            </>
+                          )}
+                          {cluster.status === "addressed" && (
+                            <span className="text-xs text-green-600 font-medium">
+                              Addressed
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {cluster.status === "pending" && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleAddressCluster(cluster)}
-                        >
-                          Address
-                        </Button>
-                      )}
-                      {cluster.status === "addressed" && (
-                        <span className="text-xs text-green-600 font-medium">
-                          Addressed
-                        </span>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Hidden Clusters Section */}
+              {showHidden && hiddenClusters.length > 0 && (
+                <div className="mt-6">
+                  <h3 className="text-sm font-medium text-muted-foreground mb-3">
+                    Hidden Clusters
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {hiddenClusters.map((cluster) => (
+                      <Card
+                        key={cluster.id}
+                        className="opacity-50 border-dashed"
+                      >
+                        <CardHeader>
+                          <CardTitle className="flex items-center justify-between text-base">
+                            <span className="flex items-center gap-2">
+                              {cluster.label}
+                            </span>
+                            <Badge variant="outline" className="text-muted-foreground">
+                              Hidden
+                            </Badge>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <p className="text-sm text-muted-foreground italic">
+                            &ldquo;{cluster.representative_question}&rdquo;
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <span>{cluster.question_count} questions</span>
+                              <span className="flex items-center gap-1">
+                                <ArrowUpCircle className="h-3.5 w-3.5" />
+                                {cluster.upvotes}
+                              </span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleRestoreCluster(cluster.id)}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                              Restore
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 

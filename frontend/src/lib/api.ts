@@ -129,6 +129,20 @@ export function upvoteCluster(clusterId: string) {
   });
 }
 
+export function hideCluster(clusterId: string) {
+  return request<{ cluster_id: string; status: string }>(
+    `/api/clusters/${clusterId}/hide`,
+    { method: "PATCH" }
+  );
+}
+
+export function restoreCluster(clusterId: string) {
+  return request<{ cluster_id: string; status: string }>(
+    `/api/clusters/${clusterId}/restore`,
+    { method: "PATCH" }
+  );
+}
+
 export function addressCluster(data: {
   cluster_id: string;
   response_type: string;
