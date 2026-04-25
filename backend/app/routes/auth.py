@@ -1,13 +1,55 @@
+import hashlib
+import hmac
+import os
+import secrets
+import time
 from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, HTTPException
 
-from app.config import WORLD_APP_ID, WORLD_ACTION
+from app.config import WORLD_APP_ID, WORLD_ACTION, WORLD_RP_ID, WORLD_RP_SIGNING_KEY
 from app.database import get_db
 from app.models import VerifyWorldIdRequest
 
 router = APIRouter()
+
+
+@router.get("/rp-context")
+async def get_rp_context():
+    """Generate an RP context with a valid signature for the World ID widget.
+
+    The frontend calls this before opening the IDKit widget.
+    The signing key never leaves the backend.
+    """
+    if not WORLD_RP_SIGNING_KEY or not WORLD_RP_ID:
+        raise HTTPException(status_code=503, detail="World ID RP signing not configured")
+
+    # Generate nonce, timestamps
+    nonce = "0x" + secrets.token_hex(16)
+    created_at = int(time.time())
+    expires_at = created_at + 300  # 5 minutes
+
+    # Build the message to sign: rp_id + nonce + created_at + expires_at
+    # Per World ID spec: HMAC-SHA256 of the concatenated fields
+    signing_key = WORLD_RP_SIGNING_KEY
+    if signing_key.startswith("0x"):
+        signing_key = signing_key[2:]
+
+    message = f"{WORLD_RP_ID}{nonce}{created_at}{expires_at}"
+    signature = "0x" + hmac.new(
+        bytes.fromhex(signing_key),
+        message.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    return {
+        "rp_id": WORLD_RP_ID,
+        "nonce": nonce,
+        "created_at": created_at,
+        "expires_at": expires_at,
+        "signature": signature,
+    }
 
 
 @router.post("/verify-world-id")
