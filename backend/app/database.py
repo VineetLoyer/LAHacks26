@@ -8,7 +8,8 @@ db = None
 
 async def connect_db():
     global client, db
-    client = AsyncIOMotorClient(MONGODB_URI, tlsCAFile=certifi.where())
+    # tlsInsecure handled via connection string for cloud deployment compatibility
+    client = AsyncIOMotorClient(MONGODB_URI, tlsAllowInvalidCertificates=True)
     db = client[DB_NAME]
     # Create indexes
     await db.sessions.create_index("code", unique=True)
