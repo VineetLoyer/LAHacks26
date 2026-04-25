@@ -155,3 +155,37 @@ export function verifyWorldId(data: {
     { method: "POST", body: JSON.stringify(data) }
   );
 }
+
+
+// --- Reports ---
+export interface ReportData {
+  id: string;
+  total_participants: number;
+  total_questions: number;
+  clusters_addressed: number;
+  clusters_total: number;
+  confusion_timeline: Array<{
+    slide: number;
+    confusion_pct: number;
+    avg_rating: number;
+    responses: number;
+  }>;
+  confusion_spikes: Array<{
+    slide: number;
+    confusion_pct: number;
+    description: string;
+  }>;
+  flagged_for_next_lecture: string[];
+  summary: string;
+  generated_at: string;
+}
+
+export function generateReport(sessionId: string) {
+  return request<ReportData>(`/api/reports/generate/${sessionId}`, {
+    method: "POST",
+  });
+}
+
+export function getReport(sessionId: string) {
+  return request<ReportData>(`/api/reports/${sessionId}`);
+}

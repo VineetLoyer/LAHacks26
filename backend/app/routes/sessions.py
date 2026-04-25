@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from bson import ObjectId
 
 from app.database import get_db
+from app.sio_instance import sio
 from app.models import CreateSessionRequest, SessionStatus, ClusterStatus
 
 router = APIRouter()
@@ -369,3 +370,29 @@ async def get_session_stats(session_id: str):
         "confusion_threshold": session.get("confusion_threshold", 60),
         "cluster_count": cluster_count,
     }
+
+
+@router.post("/{session_id}/end")
+async def end_session(session_id: str):
+    """End a session and emit session_ended event."""
+    db = get_db()
+    sid = ObjectId(session_id)
+
+    session = await db.sessions.find_one({"_id": sid})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    now = datetime.utcnow()
+    await db.sessions.update_one(
+        {"_id": sid},
+        {"$set": {"status": SessionStatus.ended, "ended_at": now}},
+    )
+
+    # Emit session_ended event
+    if session.get("code"):
+        await sio.emit("session_ended", {
+            "session_id": session_id,
+            "report_available": False,
+        }, room=session["code"])
+
+    return {"status": "ended"}

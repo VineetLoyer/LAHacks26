@@ -25,7 +25,10 @@ import {
   listClusters,
   generateClusters,
   addressCluster,
+  generateReport,
 } from "@/lib/api";
+import type { ReportData } from "@/lib/api";
+import { ReportView } from "@/components/report-view";
 import { getSocket, joinRoom, triggerCheckin } from "@/lib/socket";
 import {
   Users,
@@ -35,6 +38,7 @@ import {
   CheckCircle2,
   ArrowUpCircle,
   Radio,
+  StopCircle,
 } from "lucide-react";
 
 interface ClusterData {
@@ -78,6 +82,12 @@ function DashboardContent() {
   const [addressResponseType, setAddressResponseType] = useState("explained_now");
   const [customResponse, setCustomResponse] = useState("");
   const [addressLoading, setAddressLoading] = useState(false);
+
+  // Report state
+  const [report, setReport] = useState<ReportData | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [sessionTitle, setSessionTitle] = useState("");
 
   // --- Fetch initial data ---
   useEffect(() => {
@@ -239,6 +249,20 @@ function DashboardContent() {
   const handleDismissSpike = useCallback(() => {
     setSpikeAlert({ visible: false, message: "" });
   }, []);
+
+  const handleGenerateReport = useCallback(async () => {
+    if (!sessionId) return;
+    setReportLoading(true);
+    try {
+      const data = await generateReport(sessionId);
+      setReport(data);
+      setShowReport(true);
+    } catch {
+      // keep going on error
+    } finally {
+      setReportLoading(false);
+    }
+  }, [sessionId]);
 
   // Sort clusters by question_count descending
   const sortedClusters = [...clusters].sort((a, b) => b.question_count - a.question_count);
@@ -492,6 +516,56 @@ function DashboardContent() {
             </div>
           )}
         </div>
+
+        {/* End Session & Generate Report */}
+        <Card>
+          <CardContent className="flex items-center justify-between pt-4">
+            <div>
+              <p className="font-medium">End Session</p>
+              <p className="text-sm text-muted-foreground">
+                Generate a comprehensive report and close the session
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              onClick={handleGenerateReport}
+              disabled={reportLoading}
+            >
+              {reportLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generating Report...
+                </>
+              ) : (
+                <>
+                  <StopCircle className="h-4 w-4" />
+                  End Session &amp; Generate Report
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Report Modal */}
+        <Dialog
+          open={showReport}
+          onOpenChange={(open) => {
+            if (!open) setShowReport(false);
+          }}
+        >
+          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Session Report</DialogTitle>
+              <DialogDescription>
+                End-of-session analytics and summary
+              </DialogDescription>
+            </DialogHeader>
+            {report && (
+              <ReportView report={report} sessionTitle={sessionTitle} />
+            )}
+            <DialogFooter showCloseButton />
+          </DialogContent>
+        </Dialog>
 
         {/* Address Cluster Modal */}
         <Dialog

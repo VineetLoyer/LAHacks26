@@ -186,3 +186,5 @@
 .emoji-btn:hover {
   transform: scale(1.2);
 }
+
+/* Print styles removed — report uses a dedicated print window */

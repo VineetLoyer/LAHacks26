@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from app.config import FRONTEND_URL
 from app.database import connect_db, close_db
 from app.sio_instance import sio
-from app.routes import sessions, checkins, questions, clusters, auth
+from app.routes import sessions, checkins, questions, clusters, auth, reports
 
 
 @asynccontextmanager
@@ -35,3 +35,4 @@ app.include_router(checkins.router, prefix="/api/checkins", tags=["checkins"])
 app.include_router(questions.router, prefix="/api/questions", tags=["questions"])
 app.include_router(clusters.router, prefix="/api/clusters", tags=["clusters"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
