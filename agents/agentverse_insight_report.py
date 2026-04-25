@@ -35,20 +35,24 @@ _mongo_db = None
 def _get_db():
     global _mongo_client, _mongo_db
     if _mongo_client is None:
-        from motor.motor_asyncio import AsyncIOMotorClient
-        _mongo_client = AsyncIOMotorClient(MONGODB_URI)
+        from pymongo import MongoClient
+        _mongo_client = MongoClient(MONGODB_URI)
         _mongo_db = _mongo_client["asksafe"]
     return _mongo_db
 
 
 def _extract_session_code(text):
-    match = re.search(r"\b([A-Z0-9]{6})\b", text.upper())
-    return match.group(1) if match else None
+    """Extract a 6-char alphanumeric session code that contains at least one digit."""
+    codes = re.findall(r"\b([A-Z0-9]{6})\b", text.upper())
+    for c in codes:
+        if any(ch.isdigit() for ch in c):
+            return c
+    return None
 
 
-async def _generate_session_report(session_code):
+def _generate_session_report(session_code):
     db = _get_db()
-    session = await db.sessions.find_one({"code": session_code.upper()})
+    session = db.sessions.find_one({"code": session_code.upper()})
     if not session:
         return f"I couldn't find a session with code {session_code}. Please check the code."
 
@@ -58,9 +62,9 @@ async def _generate_session_report(session_code):
     status = session.get("status", "active")
 
     total_participants = max(session.get("live_participant_count", 0), session.get("demo_participant_count", 0))
-    checkins = await db.checkins.find({"session_id": session_id}).to_list(length=5000)
-    questions = await db.questions.find({"session_id": session_id}).to_list(length=500)
-    clusters = await db.clusters.find({"session_id": session_id}).to_list(length=100)
+    checkins = list(db.checkins.find({"session_id": session_id}).limit(5000))
+    questions = list(db.questions.find({"session_id": session_id}).limit(500))
+    clusters = list(db.clusters.find({"session_id": session_id}).limit(100))
 
     total_checkins = len(checkins)
     total_questions = len(questions)
@@ -159,7 +163,7 @@ async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
     session_code = _extract_session_code(text)
 
     if session_code:
-        response = await _generate_session_report(session_code)
+        response = _generate_session_report(session_code)
     else:
         response = (
             "Hi! I'm the AskSafe Insight Report Agent.\n\n"

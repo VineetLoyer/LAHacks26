@@ -35,18 +35,22 @@ _mongo_db = None
 def _get_db():
     global _mongo_client, _mongo_db
     if _mongo_client is None:
-        from motor.motor_asyncio import AsyncIOMotorClient
-        _mongo_client = AsyncIOMotorClient(MONGODB_URI)
+        from pymongo import MongoClient
+        _mongo_client = MongoClient(MONGODB_URI)
         _mongo_db = _mongo_client["asksafe"]
     return _mongo_db
 
 
 def _extract_session_code(text):
-    match = re.search(r"\b([A-Z0-9]{6})\b", text.upper())
-    return match.group(1) if match else None
+    """Extract a 6-char alphanumeric session code that contains at least one digit."""
+    codes = re.findall(r"\b([A-Z0-9]{6})\b", text.upper())
+    for c in codes:
+        if any(ch.isdigit() for ch in c):
+            return c
+    return None
 
 
-async def _run_gemini_clustering(questions, title, slide_contexts=None):
+def _run_gemini_clustering(questions, title, slide_contexts=None):
     slide_block = ""
     if slide_contexts:
         lines = []
@@ -78,28 +82,28 @@ Return ONLY valid JSON (no markdown) as an array:
         return []
 
 
-async def _cluster_session_questions(session_code):
+def _cluster_session_questions(session_code):
     db = _get_db()
-    session = await db.sessions.find_one({"code": session_code.upper()})
+    session = db.sessions.find_one({"code": session_code.upper()})
     if not session:
         return f"I couldn't find a session with code {session_code}. Please check the code."
 
     session_id = session["_id"]
     title = session.get("title", "Untitled Session")
 
-    questions = await db.questions.find({"session_id": session_id}).to_list(length=500)
+    questions = list(db.questions.find({"session_id": session_id}).limit(500))
     if not questions:
         return f"Session **{title}** ({session_code}) has no questions yet."
 
     # Check for existing clusters
-    existing = await db.clusters.find({"session_id": session_id}).to_list(length=100)
+    existing = list(db.clusters.find({"session_id": session_id}).limit(100))
 
     if existing:
         clusters = existing
         source = "existing database clusters"
     else:
         slide_contexts = session.get("slide_contexts", [])
-        raw = await _run_gemini_clustering(questions, title, slide_contexts)
+        raw = _run_gemini_clustering(questions, title, slide_contexts)
         if raw:
             clusters = raw
             source = "AI-generated clusters"
@@ -147,7 +151,7 @@ async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
     session_code = _extract_session_code(text)
 
     if session_code:
-        response = await _cluster_session_questions(session_code)
+        response = _cluster_session_questions(session_code)
     else:
         response = (
             "Hi! I'm the AskSafe Question Clustering Agent.\n\n"

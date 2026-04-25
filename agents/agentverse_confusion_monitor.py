@@ -43,8 +43,12 @@ def _get_db():
 
 
 def _extract_session_code(text):
-    match = re.search(r"\b([A-Z0-9]{6})\b", text.upper())
-    return match.group(1) if match else None
+    """Extract a 6-char alphanumeric session code that contains at least one digit."""
+    codes = re.findall(r"\b([A-Z0-9]{6})\b", text.upper())
+    for c in codes:
+        if any(ch.isdigit() for ch in c):
+            return c
+    return None
 
 
 def _compute_confusion_analytics(session_code):
