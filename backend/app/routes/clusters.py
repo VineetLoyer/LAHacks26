@@ -9,6 +9,7 @@ from app.database import get_db
 from app.sio_instance import sio
 from app.config import GEMINI_API_KEY
 from app.models import AddressClusterRequest, ClusterStatus
+from app import agent_client
 
 router = APIRouter()
 
@@ -84,8 +85,14 @@ Use the slide content above to better understand the context of each question an
 determine whether questions are on-topic or off-topic relative to the lecture material.
 """
 
-    prompt = f"""You are an educational AI. Given student questions from a lecture 
+    prompt = f"""You are an educational AI assistant. Given student questions from a lecture 
 titled "{session['title']}", group them into semantic clusters.
+
+IMPORTANT CLUSTERING RULES:
+- Do NOT lump unrelated questions together just because there are few of them.
+- Logistical questions (homework deadlines, exam dates, grading) should be their OWN cluster, separate from conceptual questions.
+- If a question is unique and doesn't fit any cluster, put it in its own single-question cluster.
+- Each cluster should contain questions about the SAME specific topic.
 {slide_section}
 Questions:
 {json.dumps(q_list, indent=2)}
@@ -96,9 +103,12 @@ Return ONLY valid JSON (no markdown fences) as an array of clusters:
     "label": "Short descriptive label (5-7 words)",
     "question_ids": ["id1", "id2"],
     "representative_question": "The best single question from this cluster",
+    "summary": "A 1-2 sentence description explaining what students in this cluster are asking about. Mention the distinct sub-topics if there are multiple. For example: 'Several students are asking about the HW4 deadline and submission format. One student also wants to know if late submissions are accepted.'",
     "on_topic": true
   }}
-]"""
+]
+
+The "summary" field is CRITICAL — it must capture the nuance of what students are confused about, not just repeat the label. Mention specific details from the questions."""
 
     if not gemini_client:
         return {"clusters": [], "message": "Gemini API key not configured"}
@@ -124,6 +134,7 @@ Return ONLY valid JSON (no markdown fences) as an array of clusters:
             "label": c["label"],
             "question_ids": [ObjectId(qid) for qid in c["question_ids"]],
             "representative_question": c.get("representative_question", ""),
+            "summary": c.get("summary", ""),
             "upvotes": 0,
             "status": ClusterStatus.pending,
             "on_topic": c.get("on_topic", True),
@@ -144,10 +155,45 @@ Return ONLY valid JSON (no markdown fences) as an array of clusters:
             "label": c["label"],
             "question_count": len(c["question_ids"]),
             "representative_question": c.get("representative_question", ""),
+            "summary": c.get("summary", ""),
             "on_topic": c.get("on_topic", True),
         })
 
-    return {"clusters": created_clusters}
+    # Emit clusters_updated event so students see new clusters in real-time
+    if session.get("code"):
+        await sio.emit("clusters_updated", {
+            "clusters": [
+                {
+                    **cl,
+                    "upvotes": 0,
+                    "status": "pending",
+                    "ai_explanation": None,
+                    "professor_response": None,
+                    "response_type": None,
+                }
+                for cl in created_clusters
+            ],
+        }, room=session["code"])
+
+    # Call the Question Clustering Agent on Agentverse (non-blocking enrichment)
+    # This demonstrates the agent is integrated into the app flow
+    agent_analysis = None
+    try:
+        agent_result = await agent_client.call_question_clustering(
+            session_code=session.get("code", ""),
+            title=session.get("title", ""),
+            question_count=len(questions),
+        )
+        if agent_result:
+            agent_analysis = agent_result.get("agent_response")
+            print(f"[Agentverse] Question Clustering Agent responded for session {session.get('code')}")
+    except Exception as e:
+        print(f"[Agentverse] Question Clustering Agent call failed (non-critical): {e}")
+
+    return {
+        "clusters": created_clusters,
+        "agent_analysis": agent_analysis,
+    }
 
 
 @router.get("/list/{session_id}")
@@ -163,6 +209,7 @@ async def list_clusters(session_id: str):
                 "label": c["label"],
                 "question_count": len(c.get("question_ids", [])),
                 "representative_question": c.get("representative_question", ""),
+                "summary": c.get("summary", ""),
                 "upvotes": c.get("upvotes", 0),
                 "status": c.get("status", "pending"),
                 "on_topic": c.get("on_topic", True),

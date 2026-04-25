@@ -10,6 +10,7 @@ from google import genai
 from app.database import get_db
 from app.sio_instance import sio
 from app.config import GEMINI_API_KEY
+from app import agent_client
 
 router = APIRouter()
 
@@ -133,6 +134,125 @@ def _generate_template_summary(
     )
 
 
+async def _generate_student_email_body(
+    session_title: str,
+    report: Optional[dict],
+    db,
+    session_id,
+) -> str:
+    """Generate a student-friendly email summary for post-session delivery.
+
+    Different from the professor report — more encouraging, focused on what was
+    covered and what to review next.
+    """
+    # Gather data from report or raw session data
+    if report:
+        summary = report.get("summary", "")
+        confusion_spikes = report.get("confusion_spikes", [])
+        flagged = report.get("flagged_for_next_lecture", [])
+        total_questions = report.get("total_questions", 0)
+        clusters_addressed = report.get("clusters_addressed", 0)
+        clusters_total = report.get("clusters_total", 0)
+    else:
+        # Fallback: compute from raw data
+        summary = ""
+        total_questions = await db.questions.count_documents({"session_id": session_id})
+        clusters_cursor = db.clusters.find({"session_id": session_id})
+        clusters = await clusters_cursor.to_list(length=200)
+        clusters_total = len(clusters)
+        clusters_addressed = sum(1 for c in clusters if c.get("status") == "addressed")
+        flagged = [
+            c["label"] for c in clusters
+            if c.get("status") in ("flagged", "pending") and c.get("on_topic", True)
+        ]
+        confusion_spikes = []
+
+    # Gather addressed cluster labels and explanations for the email
+    addressed_clusters = []
+    clusters_cursor = db.clusters.find({
+        "session_id": session_id,
+        "status": "addressed",
+    })
+    async for c in clusters_cursor:
+        addressed_clusters.append({
+            "label": c.get("label", ""),
+            "explanation": c.get("ai_explanation", "") or "",
+        })
+
+    # Try Gemini for a student-friendly email
+    if gemini_client:
+        addressed_text = "\n".join(
+            f"- {ac['label']}: {ac['explanation'][:200]}"
+            for ac in addressed_clusters
+        ) or "No clusters were addressed during this session."
+
+        spike_text = ", ".join(
+            f"Slide {s['slide']} ({s['confusion_pct']}%)"
+            for s in confusion_spikes
+        ) or "None"
+
+        flagged_text = ", ".join(flagged) if flagged else "None"
+
+        prompt = f"""You are a friendly teaching assistant writing a post-session email to students.
+Write a warm, encouraging email summary for students who attended this lecture session.
+
+Session: {session_title}
+Total questions asked: {total_questions}
+Topics addressed by the professor ({clusters_addressed} of {clusters_total}):
+{addressed_text}
+
+Confusion areas (slides where students struggled): {spike_text}
+Topics flagged for next class: {flagged_text}
+
+The email should:
+1. Start with a friendly greeting and acknowledge their participation
+2. Summarize the key topics that were covered
+3. List the questions that were answered (from addressed clusters)
+4. Mention confusion areas that were resolved
+5. Suggest what to review before the next class (flagged topics)
+6. End with an encouraging note
+
+Keep it concise (under 300 words), warm, and student-friendly. Use simple language.
+Do NOT include a subject line — just the body text."""
+
+        try:
+            response = gemini_client.models.generate_content(
+                model="gemma-3-27b-it",
+                contents=prompt,
+            )
+            if response.text:
+                return response.text
+        except Exception as e:
+            print(f"Gemini student email generation failed: {e}")
+
+    # Fallback: template-based email
+    addressed_list = ""
+    if addressed_clusters:
+        items = [f"  - {ac['label']}" for ac in addressed_clusters]
+        addressed_list = "\n".join(items)
+    else:
+        addressed_list = "  (No topics were formally addressed)"
+
+    flagged_list = ""
+    if flagged:
+        flagged_list = "\n".join(f"  - {f}" for f in flagged)
+    else:
+        flagged_list = "  Nothing specific — great job keeping up!"
+
+    return (
+        f"Hi there!\n\n"
+        f"Thanks for participating in today's session: \"{session_title}\"!\n\n"
+        f"Here's a quick recap of what was covered:\n\n"
+        f"Questions Answered ({clusters_addressed} of {clusters_total} topics):\n"
+        f"{addressed_list}\n\n"
+        f"Topics to Review Before Next Class:\n"
+        f"{flagged_list}\n\n"
+        f"A total of {total_questions} questions were submitted during the session. "
+        f"Keep asking questions — that's how you learn best!\n\n"
+        f"Good luck with your studies! 📚"
+    )
+
+
 @router.post("/generate/{session_id}")
 async def generate_report(session_id: str):
     """End session and generate a comprehensive report."""
@@ -249,10 +369,31 @@ async def generate_report(session_id: str):
             "report_available": True,
         }, room=session["code"])
 
+    # Call the Insight Report Agent on Agentverse (enrichment)
+    # Demonstrates agent integration — agent generates its own narrative analysis
+    agent_analysis = None
+    try:
+        agent_result = await agent_client.call_insight_report(
+            session_code=session.get("code", ""),
+            title=session.get("title", ""),
+        )
+        if agent_result:
+            agent_analysis = agent_result.get("agent_response")
+            # Store agent analysis alongside the report
+            await db.reports.update_one(
+                {"session_id": sid},
+                {"$set": {"agent_analysis": agent_analysis}},
+            )
+            print(f"[Agentverse] Insight Report Agent responded for session {session.get('code')}")
+    except Exception as e:
+        print(f"[Agentverse] Insight Report Agent call failed (non-critical): {e}")
+
     # Return report with string id
     report["id"] = session_id
     report.pop("session_id", None)
     report["generated_at"] = now.isoformat()
+    if agent_analysis:
+        report["agent_analysis"] = agent_analysis
 
     return report
 

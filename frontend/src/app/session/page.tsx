@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { submitQuestion, submitCheckin, listClusters, upvoteCluster } from "@/lib/api";
+import { submitQuestion, submitCheckin, listClusters, upvoteCluster, optInEmail } from "@/lib/api";
 import { getSocket, joinRoom } from "@/lib/socket";
 import { BroadcastFeed, type Broadcast } from "@/components/broadcast-feed";
 import { WhisperButton } from "@/components/whisper-button";
-import { ArrowUpCircle } from "lucide-react";
+import { ArrowUpCircle, Mail } from "lucide-react";
 
 const STORAGE_KEY_PREFIX = "asksafe_questions_";
+const EMAIL_OPTIN_KEY_PREFIX = "asksafe_email_optin_";
 
 function getStoredQuestions(code: string): string[] {
   if (typeof window === "undefined") return [];
@@ -43,6 +44,7 @@ interface ClusterData {
   label: string;
   question_count: number;
   representative_question: string;
+  summary: string;
   upvotes: number;
   status: string;
   on_topic: boolean;
@@ -87,8 +89,14 @@ function SessionContent() {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [clusters, setClusters] = useState<ClusterData[]>([]);
   const [upvotedIds, setUpvotedIds] = useState<string[]>([]);
+  const [currentSlide, setCurrentSlide] = useState<number | undefined>(undefined);
+  const [emailInput, setEmailInput] = useState("");
+  const [emailOptedIn, setEmailOptedIn] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [sessionEnded, setSessionEnded] = useState(false);
 
-  // Restore submitted questions and upvoted IDs from localStorage, fetch clusters on mount
+  // Restore submitted questions, upvoted IDs, and email opt-in from localStorage, fetch clusters on mount
   useEffect(() => {
     if (sessionCode) {
       const stored = getStoredQuestions(sessionCode);
@@ -96,6 +104,15 @@ function SessionContent() {
         setSubmitted(stored);
       }
       setUpvotedIds(getUpvotedIds(sessionCode));
+      // Restore email opt-in status
+      try {
+        const optedIn = localStorage.getItem(`${EMAIL_OPTIN_KEY_PREFIX}${sessionCode}`);
+        if (optedIn) {
+          setEmailOptedIn(true);
+        }
+      } catch {
+        // localStorage unavailable
+      }
     }
     if (sessionId) {
       listClusters(sessionId)
@@ -112,6 +129,7 @@ function SessionContent() {
 
     const handleCheckinRequested = (data: { slide?: number }) => {
       setCheckinSlide(data?.slide ?? 0);
+      if (data?.slide) setCurrentSlide(data.slide);
       setCheckinError(null);
       setCheckinSuccess(false);
       setCheckinOpen(true);
@@ -137,14 +155,31 @@ function SessionContent() {
       );
     };
 
+    const handleClustersUpdated = (data: { clusters: ClusterData[] }) => {
+      // Merge new clusters with existing ones (replace matching IDs, add new ones)
+      setClusters((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        const newClusters = data.clusters.filter((c) => !existingIds.has(c.id));
+        return [...prev, ...newClusters];
+      });
+    };
+
+    const handleSessionEnded = () => {
+      setSessionEnded(true);
+    };
+
     // Remove previous listeners to avoid duplicates (React strict mode)
     socket.off("checkin_requested", handleCheckinRequested);
     socket.off("cluster_addressed", handleClusterAddressed);
     socket.off("cluster_upvoted", handleClusterUpvoted);
+    socket.off("clusters_updated", handleClustersUpdated);
+    socket.off("session_ended", handleSessionEnded);
 
     socket.on("checkin_requested", handleCheckinRequested);
     socket.on("cluster_addressed", handleClusterAddressed);
     socket.on("cluster_upvoted", handleClusterUpvoted);
+    socket.on("clusters_updated", handleClustersUpdated);
+    socket.on("session_ended", handleSessionEnded);
 
     joinRoom(sessionCode, "student");
 
@@ -152,6 +187,8 @@ function SessionContent() {
       socket.off("checkin_requested", handleCheckinRequested);
       socket.off("cluster_addressed", handleClusterAddressed);
       socket.off("cluster_upvoted", handleClusterUpvoted);
+      socket.off("clusters_updated", handleClustersUpdated);
+      socket.off("session_ended", handleSessionEnded);
     };
   }, [sessionCode]);
 
@@ -202,7 +239,7 @@ function SessionContent() {
     if (!question.trim()) return;
     setLoading(true);
     try {
-      await submitQuestion({ session_id: sessionId, text: question.trim() });
+      await submitQuestion({ session_id: sessionId, text: question.trim(), slide: currentSlide });
       const updated = [question.trim(), ...submitted];
       setSubmitted(updated);
       storeQuestions(sessionCode, updated);
@@ -211,6 +248,25 @@ function SessionContent() {
       // silently fail for now
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleEmailOptIn() {
+    if (!emailInput.trim()) return;
+    setEmailLoading(true);
+    setEmailError(null);
+    try {
+      await optInEmail(sessionId, emailInput.trim());
+      setEmailOptedIn(true);
+      try {
+        localStorage.setItem(`${EMAIL_OPTIN_KEY_PREFIX}${sessionCode}`, emailInput.trim());
+      } catch {
+        // localStorage unavailable
+      }
+    } catch (err) {
+      setEmailError(err instanceof Error ? err.message : "Failed to subscribe");
+    } finally {
+      setEmailLoading(false);
     }
   }
 
@@ -305,12 +361,17 @@ function SessionContent() {
                 <CardContent className="flex items-start justify-between gap-3 pt-4">
                   <div className="flex-1 min-w-0 space-y-1">
                     <p className="font-bold text-sm">{cluster.label}</p>
-                    <p className="text-sm text-muted-foreground italic truncate">
-                      &ldquo;{cluster.representative_question}&rdquo;
+                    <p className="text-sm text-muted-foreground">
+                      {cluster.summary || cluster.representative_question}
                     </p>
-                    <Badge variant={cluster.on_topic ? "default" : "secondary"}>
-                      {cluster.on_topic ? "On-topic" : "Off-topic"}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={cluster.on_topic ? "default" : "secondary"}>
+                        {cluster.on_topic ? "On-topic" : "Off-topic"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {cluster.question_count} question{cluster.question_count !== 1 ? "s" : ""}
+                      </span>
+                    </div>
                   </div>
                   <Button
                     variant="ghost"
@@ -346,6 +407,51 @@ function SessionContent() {
           </CardContent>
         </Card>
       )}
+
+      {/* Session Ended Banner */}
+      {sessionEnded && (
+        <Card className="mb-6 border-blue-500 bg-blue-50 dark:bg-blue-950">
+          <CardContent className="pt-4 space-y-4">
+            <p className="text-sm text-blue-700 dark:text-blue-300 font-medium text-center">
+              📋 This session has ended. Thanks for participating!
+            </p>
+
+            {/* Email opt-in — only shown after session ends */}
+            {emailOptedIn ? (
+              <p className="text-sm text-green-600 dark:text-green-400 text-center">
+                ✅ You&apos;ll receive a summary at your email shortly.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground text-center">
+                  Want a summary of today&apos;s session? Enter your email below.
+                </p>
+                <div className="flex gap-2 max-w-md mx-auto">
+                  <Input
+                    type="email"
+                    placeholder="your@email.com"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleEmailOptIn()}
+                    disabled={emailLoading}
+                  />
+                  <Button
+                    onClick={handleEmailOptIn}
+                    disabled={emailLoading || !emailInput.trim()}
+                    size="sm"
+                  >
+                    {emailLoading ? "..." : "Send me summary"}
+                  </Button>
+                </div>
+                {emailError && (
+                  <p className="text-sm text-destructive text-center">{emailError}</p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
     </main>
   );
 }

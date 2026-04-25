@@ -100,6 +100,7 @@ export function generateClusters(sessionId: string) {
       label: string;
       question_count: number;
       representative_question: string;
+      summary: string;
       on_topic: boolean;
     }>;
     message?: string;
@@ -113,6 +114,7 @@ export function listClusters(sessionId: string) {
       label: string;
       question_count: number;
       representative_question: string;
+      summary: string;
       upvotes: number;
       status: string;
       on_topic: boolean;
@@ -226,4 +228,19 @@ export function getSlideContexts(sessionId: string) {
   return request<{
     slides: Array<{ slide_number: number; text_content: string }>;
   }>(`/api/sessions/${sessionId}/slides`);
+}
+
+// --- Email Opt-In ---
+export function optInEmail(sessionId: string, email: string) {
+  return request<{ status: string; email: string }>(
+    `/api/sessions/${sessionId}/opt-in-email`,
+    { method: "POST", body: JSON.stringify({ email }) }
+  );
+}
+
+export function sendSummary(sessionId: string) {
+  return request<{ emails_sent: number; summary: string; message: string }>(
+    `/api/sessions/${sessionId}/send-summary`,
+    { method: "POST" }
+  );
 }

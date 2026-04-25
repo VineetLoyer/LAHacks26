@@ -5,6 +5,7 @@ from bson import ObjectId
 from app.database import get_db
 from app.sio_instance import sio
 from app.models import SubmitCheckinRequest
+from app import agent_client
 
 router = APIRouter()
 
@@ -51,6 +52,27 @@ async def submit_checkin(req: SubmitCheckinRequest):
             "total_checkins": total_checkins,
             "slide": req.slide,
         }, room=session["code"])
+
+        # Call the Confusion Monitor Agent on Agentverse (async, non-blocking)
+        # Demonstrates agent integration — agent does correlation analysis
+        try:
+            # Gather recent ratings for this slide to send as a batch
+            recent_cursor = db.checkins.find(
+                {"session_id": ObjectId(req.session_id), "slide": req.slide}
+            ).sort("timestamp", -1).limit(20)
+            recent = await recent_cursor.to_list(length=20)
+            ratings = [c.get("confusion_rating", 3) for c in recent]
+
+            agent_result = await agent_client.call_confusion_monitor(
+                session_code=session.get("code", ""),
+                ratings=ratings,
+                slide=req.slide,
+                threshold=session.get("confusion_threshold", 60),
+            )
+            if agent_result:
+                print(f"[Agentverse] Confusion Monitor Agent responded for session {session.get('code')}")
+        except Exception as e:
+            print(f"[Agentverse] Confusion Monitor Agent call failed (non-critical): {e}")
 
     return {
         "confusion_index": confusion_pct,

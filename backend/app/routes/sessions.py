@@ -1,4 +1,5 @@
 import random
+import re
 import string
 from datetime import datetime, timedelta
 from typing import Optional
@@ -8,7 +9,7 @@ from bson import ObjectId
 
 from app.database import get_db
 from app.sio_instance import sio
-from app.models import CreateSessionRequest, SessionStatus, ClusterStatus
+from app.models import CreateSessionRequest, SessionStatus, ClusterStatus, OptInEmailRequest
 from app.file_parser import parse_pdf, parse_docx, parse_pptx
 
 router = APIRouter()
@@ -484,3 +485,86 @@ async def end_session(session_id: str):
         }, room=session["code"])
 
     return {"status": "ended"}
+
+
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+
+@router.post("/{session_id}/opt-in-email")
+async def opt_in_email(session_id: str, req: OptInEmailRequest):
+    """Store a student's email for post-session summary delivery."""
+    db = get_db()
+    sid = ObjectId(session_id)
+
+    # Validate session exists
+    session = await db.sessions.find_one({"_id": sid})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Validate email format
+    if not EMAIL_REGEX.match(req.email):
+        raise HTTPException(status_code=400, detail="Invalid email format")
+
+    # Upsert so the same email for the same session doesn't create duplicates
+    await db.session_emails.update_one(
+        {"session_id": sid, "email": req.email},
+        {"$set": {
+            "session_id": sid,
+            "email": req.email,
+            "opted_in_at": datetime.utcnow(),
+        }},
+        upsert=True,
+    )
+
+    return {"status": "opted_in", "email": req.email}
+
+
+@router.post("/{session_id}/send-summary")
+async def send_summary(session_id: str):
+    """Generate and send (log) a student-friendly email summary to opted-in students."""
+    db = get_db()
+    sid = ObjectId(session_id)
+
+    session = await db.sessions.find_one({"_id": sid})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Fetch opted-in emails
+    email_cursor = db.session_emails.find({"session_id": sid})
+    email_docs = await email_cursor.to_list(length=500)
+
+    if not email_docs:
+        return {"emails_sent": 0, "summary": "", "message": "No opted-in students"}
+
+    emails = [doc["email"] for doc in email_docs]
+
+    # Try to fetch existing report for the session
+    report = await db.reports.find_one({"session_id": sid})
+
+    # Generate student-friendly email body
+    from app.routes.reports import _generate_student_email_body
+
+    summary_text = await _generate_student_email_body(
+        session_title=session.get("title", "Untitled Session"),
+        report=report,
+        db=db,
+        session_id=sid,
+    )
+
+    # Log the emails that would be sent (hackathon demo — actual SMTP is a TODO)
+    print(f"\n{'='*60}")
+    print(f"POST-SESSION EMAIL SUMMARY - {session.get('title', 'Session')}")
+    print(f"{'='*60}")
+    print(f"Recipients ({len(emails)}): {', '.join(emails)}")
+    print(f"{'-'*60}")
+    print(summary_text)
+    print(f"{'='*60}\n")
+
+    # Delete email records after "sending" (privacy: store only for delivery)
+    await db.session_emails.delete_many({"session_id": sid})
+
+    return {
+        "emails_sent": len(emails),
+        "summary": summary_text,
+        "message": f"Summary logged for {len(emails)} student(s). Email records deleted.",
+    }

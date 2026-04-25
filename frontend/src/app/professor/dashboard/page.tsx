@@ -51,6 +51,7 @@ interface ClusterData {
   label: string;
   question_count: number;
   representative_question: string;
+  summary: string;
   on_topic: boolean;
   upvotes: number;
   status: string;
@@ -202,6 +203,7 @@ function DashboardContent() {
       setClusters(
         data.clusters.map((c) => ({
           ...c,
+          summary: (c as ClusterData & { summary?: string }).summary || "",
           upvotes: 0,
           status: "pending",
           ai_explanation: null,
@@ -541,8 +543,8 @@ function DashboardContent() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <p className="text-sm text-muted-foreground italic">
-                        &ldquo;{cluster.representative_question}&rdquo;
+                      <p className="text-sm text-muted-foreground">
+                        {cluster.summary || cluster.representative_question}
                       </p>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">

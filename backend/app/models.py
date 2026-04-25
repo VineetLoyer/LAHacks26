@@ -57,3 +57,7 @@ class AddressClusterRequest(BaseModel):
 class VerifyWorldIdRequest(BaseModel):
     session_code: str
     proof: dict  # IDKit proof payload (merkle_root, nullifier_hash, proof, verification_level)
+
+
+class OptInEmailRequest(BaseModel):
+    email: str
