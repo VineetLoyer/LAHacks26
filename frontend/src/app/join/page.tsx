@@ -97,7 +97,7 @@ export default function JoinPage() {
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Join a Session</CardTitle>
             <p className="text-muted-foreground">
-              Enter the code your professor shared
+              Enter the code your host shared
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -113,7 +113,7 @@ export default function JoinPage() {
                 }}
               />
               <p className="text-xs text-muted-foreground/70 text-center mt-2">
-                Enter the 6-character code shared by your professor
+                Enter the 6-character code shared by your host
               </p>
             </div>
             {error && <p className="text-sm text-red-500 text-center">{error}</p>}

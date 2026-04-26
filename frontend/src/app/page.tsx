@@ -18,14 +18,14 @@ const features = [
     emoji: "🎯",
     title: "Real-Time Confusion Detection",
     description:
-      "AI monitors student confusion and alerts professors to spikes as they happen.",
+      "AI monitors participant confusion and alerts hosts to spikes as they happen.",
   },
   {
     icon: BrainCircuit,
     emoji: "🤖",
     title: "AI Question Clustering",
     description:
-      "Gemini groups similar questions so professors address topics, not individual messages.",
+      "Gemini groups similar questions so hosts address topics, not individual messages.",
   },
   {
     icon: ShieldCheck,
@@ -39,7 +39,7 @@ const features = [
     emoji: "📊",
     title: "Session Analytics",
     description:
-      "Post-session reports with AI insights and student feedback.",
+      "Post-session reports with AI insights and participant feedback.",
   },
 ];
 

@@ -442,7 +442,7 @@ encouraging — these students were anxious about asking."""
             await sio.emit("cluster_addressed", {
                 "cluster_id": req.cluster_id,
                 "label": cluster["label"],
-                "ai_explanation": "Your professor has seen this question and will address it in the next session.",
+                "ai_explanation": "Your host has seen this question and will address it in the next session.",
                 "professor_response": req.custom_response,
                 "response_type": req.response_type,
             }, room=session["code"])

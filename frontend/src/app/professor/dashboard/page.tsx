@@ -864,7 +864,7 @@ function DashboardContent() {
                       disabled={addressLoading || aiDraftLoading || !aiDraft}
                     >
                       <span className="text-sm font-medium">💡 Send AI Response</span>
-                      <span className="text-xs opacity-80 font-normal">Send the AI draft above to students</span>
+                      <span className="text-xs opacity-80 font-normal">Send the AI draft above to participants</span>
                     </Button>
                     <button
                       onClick={() => setAddressResponseType("send_link")}
@@ -903,7 +903,7 @@ function DashboardContent() {
                     autoFocus
                   />
                   <Input
-                    placeholder="Optional note for students..."
+                    placeholder="Optional note for participants..."
                     value={customResponse}
                     onChange={(e) => setCustomResponse(e.target.value)}
                   />
@@ -916,7 +916,7 @@ function DashboardContent() {
                   <p className="text-sm font-medium">✏️ Type Response</p>
                   <textarea
                     className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    placeholder="Type your response to students..."
+                    placeholder="Type your response to participants..."
                     value={customResponse}
                     onChange={(e) => setCustomResponse(e.target.value)}
                     autoFocus
@@ -948,7 +948,7 @@ function DashboardContent() {
                       Sending...
                     </>
                   ) : (
-                    "Send to Students"
+                    "Send to Participants"
                   )}
                 </Button>
               </DialogFooter>

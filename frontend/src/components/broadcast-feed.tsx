@@ -66,7 +66,7 @@ export function BroadcastFeed({ broadcasts }: { broadcasts: Broadcast[] }) {
             </p>
             {b.professor_response && b.ai_explanation && b.professor_response !== b.ai_explanation && (
               <p className="mt-2 text-xs text-muted-foreground italic">
-                AI draft was edited by instructor
+                AI draft was edited by host
               </p>
             )}
             <p className="mt-2 text-xs text-muted-foreground">

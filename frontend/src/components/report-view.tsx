@@ -278,13 +278,13 @@ ${report.flagged_for_next_lecture.length > 0 ? `<div class="sec"><div class="st"
         </CardContent>
       </Card>
 
-      {/* Student Feedback — Live */}
+      {/* Participant Feedback — Live */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-base">
             <span className="flex items-center gap-2">
               <Star className="h-4 w-4 text-yellow-500" />
-              Student Feedback
+              Participant Feedback
             </span>
             {sessionId && (
               <Button
@@ -307,7 +307,7 @@ ${report.flagged_for_next_lecture.length > 0 ? `<div class="sec"><div class="st"
         <CardContent className="space-y-4">
           {!hasFeedback ? (
             <p className="text-sm text-muted-foreground">
-              No feedback submitted yet — students can rate the session after it ends.
+              No feedback submitted yet — participants can rate the session after it ends.
             </p>
           ) : (
             <>
@@ -327,7 +327,7 @@ ${report.flagged_for_next_lecture.length > 0 ? `<div class="sec"><div class="st"
                 <span className="text-sm text-muted-foreground">/ 5</span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Based on {feedback.total_count} student
+                Based on {feedback.total_count} participant
                 {feedback.total_count !== 1 ? "s" : ""}
               </p>
 
@@ -352,10 +352,10 @@ ${report.flagged_for_next_lecture.length > 0 ? `<div class="sec"><div class="st"
                 </div>
               )}
 
-              {/* Useful student comments */}
+              {/* Useful participant comments */}
               {feedback.useful_comments && feedback.useful_comments.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-sm font-medium">Student Comments</p>
+                  <p className="text-sm font-medium">Participant Comments</p>
                   <div className="space-y-2">
                     {feedback.useful_comments.map((comment, i) => (
                       <div

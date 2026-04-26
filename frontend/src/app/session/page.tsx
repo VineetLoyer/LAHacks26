@@ -484,7 +484,7 @@ function SessionContent() {
                 {/* Optional Comment */}
                 <textarea
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="Any comments for the professor? (optional)"
+                  placeholder="Any comments for the host? (optional)"
                   rows={2}
                   value={feedbackComment}
                   onChange={(e) => setFeedbackComment(e.target.value)}
