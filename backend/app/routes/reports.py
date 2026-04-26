@@ -92,7 +92,7 @@ Keep the tone warm and constructive."""
 
     try:
         response = gemini_client.models.generate_content(
-            model="gemma-3-27b-it",
+            model="gemma-4-26b-a4b-it",
             contents=prompt,
         )
         return response.text
@@ -217,7 +217,7 @@ Do NOT include a subject line — just the body text."""
 
         try:
             response = gemini_client.models.generate_content(
-                model="gemma-3-27b-it",
+                model="gemma-4-26b-a4b-it",
                 contents=prompt,
             )
             if response.text:

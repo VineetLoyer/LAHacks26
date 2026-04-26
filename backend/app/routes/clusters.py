@@ -139,7 +139,7 @@ IMPORTANT FIELDS:
         return {"clusters": [], "message": "Gemini API key not configured"}
 
     response = gemini_client.models.generate_content(
-        model="gemma-3-27b-it",
+        model="gemma-4-26b-a4b-it",
         contents=prompt,
     )
 
@@ -402,7 +402,7 @@ confusion. Include a helpful analogy or example. Keep the tone warm and
 encouraging — these students were anxious about asking."""
 
         response = gemini_client.models.generate_content(
-            model="gemma-3-27b-it",
+            model="gemma-4-26b-a4b-it",
             contents=prompt,
         )
         explanation = response.text

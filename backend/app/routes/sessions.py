@@ -684,7 +684,7 @@ async def get_feedback_summary(session_id: str):
                 'Return ONLY valid JSON: {"useful_comments": ["comment1", ...], "summary_bullets": ["bullet1", ...]}'
             )
             response = _gemini_client.models.generate_content(
-                model="gemma-3-27b-it",
+                model="gemma-4-26b-a4b-it",
                 contents=prompt,
             )
             if response.text:

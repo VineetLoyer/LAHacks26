@@ -78,7 +78,7 @@ Return ONLY valid JSON (no markdown) as an array:
         from google import genai
         api_key = os.getenv("GEMINI_API_KEY", "")
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(model="gemma-3-27b-it", contents=prompt)
+        response = client.models.generate_content(model="gemma-4-26b-a4b-it", contents=prompt)
         raw = response.text.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
