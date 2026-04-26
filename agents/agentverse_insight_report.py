@@ -95,11 +95,12 @@ def _generate_session_report(session_code):
     overall_confused = sum(1 for c in checkins if c.get("confusion_rating", 0) >= 4)
     overall_index = round((overall_confused / total_checkins) * 100) if total_checkins > 0 else 0
 
-    # Build report
+    # Build report with multi-agent coordination narrative
     lines = []
     session_status = "Ended" if status == "ended" else "Active"
     lines.append(f"Session Report: \"{title}\" ({session_code})\n")
-    lines.append(f"Status: {session_status}\n")
+    lines.append(f"Status: {session_status}")
+    lines.append(f"[Compiled by AskSafe Report Agent using data from Confusion Monitor Agent and Question Clustering Agent]\n")
 
     lines.append("Key Statistics:")
     lines.append(f"  Participants: {total_participants}")
@@ -108,15 +109,17 @@ def _generate_session_report(session_code):
     lines.append(f"  Clusters: {total_clusters} ({clusters_addressed} addressed)")
     lines.append(f"  Overall confusion: {overall_index}%\n")
 
+    # Confusion analysis (from Confusion Monitor Agent)
+    lines.append("--- Confusion Analysis (via Confusion Monitor Agent) ---")
     if timeline:
-        lines.append("Confusion Timeline:")
+        lines.append("Per-Slide Confusion:")
         for t in timeline:
             marker = " << SPIKE" if t["pct"] >= threshold else ""
             lines.append(f"  Slide {t['slide']:>2}: {t['pct']:>3}% ({t['responses']} responses){marker}")
         lines.append("")
 
     if spikes:
-        lines.append(f"Confusion Spikes ({len(spikes)}):")
+        lines.append(f"Spikes Detected ({len(spikes)}):")
         for spike in spikes:
             spike_qs = [q.get("text", "") for q in questions if q.get("slide") == spike["slide"]]
             context = ""
@@ -124,18 +127,26 @@ def _generate_session_report(session_code):
                 context = f" -- students asked: \"{spike_qs[0][:80]}\""
             lines.append(f"  Slide {spike['slide']}: {spike['pct']}% confused{context}")
         lines.append("")
+    else:
+        lines.append("No confusion spikes detected.\n")
 
+    # Cluster analysis (from Question Clustering Agent)
+    lines.append("--- Question Clusters (via Question Clustering Agent) ---")
     if clusters:
-        lines.append("Top Question Clusters:")
         sorted_c = sorted(clusters, key=lambda c: len(c.get("question_ids", [])), reverse=True)
         for c in sorted_c[:5]:
             icon = "[Done]" if c.get("status") == "addressed" else "[Pending]"
+            summary = c.get("summary", "")
             lines.append(f"  {icon} {c.get('label', 'Unnamed')} ({len(c.get('question_ids', []))} questions, {c.get('upvotes', 0)} upvotes)")
+            if summary:
+                lines.append(f"       {summary}")
         lines.append("")
 
+    # Recommendations (synthesized by Report Agent)
+    lines.append("--- Recommendations (synthesized by Report Agent) ---")
     unaddressed = [c.get("label", "") for c in clusters if c.get("status") != "addressed" and c.get("on_topic", True)]
     if unaddressed:
-        lines.append("Flagged for Next Session:")
+        lines.append("Topics to revisit next session:")
         for topic in unaddressed:
             lines.append(f"  - {topic}")
         lines.append("")
@@ -143,6 +154,10 @@ def _generate_session_report(session_code):
     if total_clusters > 0:
         rate = round((clusters_addressed / total_clusters) * 100)
         lines.append(f"Resolution Rate: {rate}%")
+        if rate < 50:
+            lines.append("Recommendation: Consider dedicating more time to addressing student questions during the session.")
+        elif rate >= 80:
+            lines.append("Great job! Most student concerns were addressed during the session.")
 
     return "\n".join(lines)
 
