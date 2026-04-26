@@ -67,6 +67,28 @@ async def generate_clusters(session_id: str):
 
     q_list = [{"id": str(q["_id"]), "text": q["text"], "slide": q.get("slide")} for q in questions]
 
+    # Fetch existing clusters so Gemini can merge new questions into them
+    existing_clusters_cursor = db.clusters.find({"session_id": ObjectId(session_id)})
+    existing_clusters = await existing_clusters_cursor.to_list(length=100)
+    existing_cluster_info = []
+    for ec in existing_clusters:
+        existing_cluster_info.append({
+            "id": str(ec["_id"]),
+            "label": ec.get("label", ""),
+            "representative_question": ec.get("representative_question", ""),
+            "question_count": len(ec.get("question_ids", [])),
+        })
+
+    existing_section = ""
+    if existing_cluster_info:
+        existing_section = f"""
+EXISTING CLUSTERS (from previous rounds):
+{json.dumps(existing_cluster_info, indent=2)}
+
+If a new question fits an existing cluster, assign it to that cluster using the existing cluster's "id".
+If a new question does NOT fit any existing cluster, create a new cluster with a new label.
+"""
+
     # Build slide context from session document — include ALL slides for context
     slide_contexts = session.get("slide_contexts", [])
     slide_context_text = _build_slide_context_text(slide_contexts)  # all slides, no filter
@@ -83,8 +105,10 @@ determine whether questions are on-topic or off-topic relative to the lecture ma
 
     prompt = f"""You are an educational AI assistant. Given student questions from a lecture 
 titled "{session['title']}", group them into semantic clusters.
-
+{existing_section}
 IMPORTANT CLUSTERING RULES:
+- If a new question is similar to an existing cluster, ADD it to that existing cluster (use the existing cluster's "id" in the "existing_cluster_id" field).
+- Only create a NEW cluster if the question doesn't fit any existing cluster.
 - Do NOT lump unrelated questions together just because there are few of them.
 - Logistical questions (homework deadlines, exam dates, grading) should be their OWN cluster, separate from conceptual questions.
 - If a question is unique and doesn't fit any cluster, put it in its own single-question cluster.
@@ -101,12 +125,15 @@ Return ONLY valid JSON (no markdown fences) as an array of clusters:
     "label": "Short descriptive label (5-7 words)",
     "question_ids": ["id1", "id2"],
     "representative_question": "The best single question from this cluster",
-    "summary": "A 1-2 sentence description explaining what students in this cluster are asking about. Mention the distinct sub-topics if there are multiple. For example: 'Several students are asking about the HW4 deadline and submission format. One student also wants to know if late submissions are accepted.'",
-    "on_topic": true
+    "summary": "A 1-2 sentence description explaining what students in this cluster are asking about.",
+    "on_topic": true,
+    "existing_cluster_id": null
   }}
 ]
 
-The "summary" field is CRITICAL — it must capture the nuance of what students are confused about, not just repeat the label. Mention specific details from the questions."""
+IMPORTANT FIELDS:
+- "existing_cluster_id": Set to the existing cluster's "id" if these questions should be MERGED into an existing cluster. Set to null if this is a NEW cluster.
+- "summary": CRITICAL — must capture the nuance of what students are confused about, not just repeat the label."""
 
     if not gemini_client:
         return {"clusters": [], "message": "Gemini API key not configured"}
@@ -127,35 +154,70 @@ The "summary" field is CRITICAL — it must capture the nuance of what students 
 
     created_clusters = []
     for c in cluster_data:
-        cluster_doc = {
-            "session_id": ObjectId(session_id),
-            "label": c["label"],
-            "question_ids": [ObjectId(qid) for qid in c["question_ids"]],
-            "representative_question": c.get("representative_question", ""),
-            "summary": c.get("summary", ""),
-            "upvotes": 0,
-            "status": ClusterStatus.pending,
-            "on_topic": c.get("on_topic", True),
-            "ai_explanation": None,
-            "professor_response": None,
-            "response_type": None,
-        }
-        result = await db.clusters.insert_one(cluster_doc)
+        new_q_ids = [ObjectId(qid) for qid in c["question_ids"]]
+        existing_id = c.get("existing_cluster_id")
 
-        # Update questions with cluster_id
-        await db.questions.update_many(
-            {"_id": {"$in": [ObjectId(qid) for qid in c["question_ids"]]}},
-            {"$set": {"cluster_id": result.inserted_id}},
-        )
+        if existing_id:
+            # Merge into existing cluster
+            try:
+                await db.clusters.update_one(
+                    {"_id": ObjectId(existing_id)},
+                    {
+                        "$push": {"question_ids": {"$each": new_q_ids}},
+                        "$set": {"summary": c.get("summary", "")},
+                    },
+                )
+                # Update questions with the existing cluster_id
+                await db.questions.update_many(
+                    {"_id": {"$in": new_q_ids}},
+                    {"$set": {"cluster_id": ObjectId(existing_id)}},
+                )
+                # Fetch updated cluster for response
+                updated = await db.clusters.find_one({"_id": ObjectId(existing_id)})
+                if updated:
+                    created_clusters.append({
+                        "id": existing_id,
+                        "label": updated.get("label", c["label"]),
+                        "question_count": len(updated.get("question_ids", [])),
+                        "representative_question": updated.get("representative_question", ""),
+                        "summary": c.get("summary", updated.get("summary", "")),
+                        "on_topic": updated.get("on_topic", True),
+                    })
+            except Exception:
+                # If merge fails, create as new cluster
+                existing_id = None
 
-        created_clusters.append({
-            "id": str(result.inserted_id),
-            "label": c["label"],
-            "question_count": len(c["question_ids"]),
-            "representative_question": c.get("representative_question", ""),
-            "summary": c.get("summary", ""),
-            "on_topic": c.get("on_topic", True),
-        })
+        if not existing_id:
+            # Create new cluster
+            cluster_doc = {
+                "session_id": ObjectId(session_id),
+                "label": c["label"],
+                "question_ids": new_q_ids,
+                "representative_question": c.get("representative_question", ""),
+                "summary": c.get("summary", ""),
+                "upvotes": 0,
+                "status": ClusterStatus.pending,
+                "on_topic": c.get("on_topic", True),
+                "ai_explanation": None,
+                "professor_response": None,
+                "response_type": None,
+            }
+            result = await db.clusters.insert_one(cluster_doc)
+
+            # Update questions with new cluster_id
+            await db.questions.update_many(
+                {"_id": {"$in": new_q_ids}},
+                {"$set": {"cluster_id": result.inserted_id}},
+            )
+
+            created_clusters.append({
+                "id": str(result.inserted_id),
+                "label": c["label"],
+                "question_count": len(c["question_ids"]),
+                "representative_question": c.get("representative_question", ""),
+                "summary": c.get("summary", ""),
+                "on_topic": c.get("on_topic", True),
+            })
 
     # Emit clusters_updated event so students see new clusters in real-time
     if session.get("code"):
