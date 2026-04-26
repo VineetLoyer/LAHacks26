@@ -598,6 +598,8 @@ function DashboardContent() {
                     className={
                       cluster.status === "addressed"
                         ? "opacity-70 border-green-500/30"
+                        : cluster.status === "flagged"
+                        ? "opacity-70 border-amber-500/30"
                         : ""
                     }
                     style={{
@@ -644,7 +646,15 @@ function DashboardContent() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          {cluster.status === "pending" && (
+                          {cluster.status === "addressed" ? (
+                            <span className="text-xs text-green-600 font-medium">
+                              Addressed
+                            </span>
+                          ) : cluster.status === "flagged" ? (
+                            <span className="text-xs text-amber-600 font-medium">
+                              Flagged
+                            </span>
+                          ) : (
                             <>
                               <Button
                                 size="sm"
@@ -662,11 +672,6 @@ function DashboardContent() {
                                 Address
                               </Button>
                             </>
-                          )}
-                          {cluster.status === "addressed" && (
-                            <span className="text-xs text-green-600 font-medium">
-                              Addressed
-                            </span>
                           )}
                         </div>
                       </div>
