@@ -177,6 +177,22 @@ def _generate_session_report(session_code):
         elif rate >= 80:
             lines.append("🎉 Great job! Most participant concerns were addressed during the session.")
 
+    # Participant feedback
+    feedback_docs = list(db.feedback.find({"session_id": session_id}).limit(100))
+    if feedback_docs:
+        lines.append("")
+        lines.append("━━━ Participant Feedback ━━━")
+        ratings = [f.get("rating", 0) for f in feedback_docs if f.get("rating")]
+        if ratings:
+            avg = round(sum(ratings) / len(ratings), 1)
+            stars = "★" * round(avg) + "☆" * (5 - round(avg))
+            lines.append(f"  {stars} {avg}/5 (from {len(ratings)} participant{'s' if len(ratings) > 1 else ''})")
+        comments = [f.get("comment", "").strip() for f in feedback_docs if f.get("comment", "").strip()]
+        if comments:
+            lines.append("  Comments:")
+            for c in comments[:5]:
+                lines.append(f'    • "{c[:100]}"')
+
     return "\n".join(lines)
 
 
