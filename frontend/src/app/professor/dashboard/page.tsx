@@ -167,6 +167,7 @@ function DashboardContent() {
     };
 
     const onClusterUpvoted = (data: { cluster_id: string; upvotes: number }) => {
+      console.log("[Socket] cluster_upvoted received:", data);
       setClusters((prev) =>
         prev.map((c) => (c.id === data.cluster_id ? { ...c, upvotes: data.upvotes } : c))
       );
@@ -362,8 +363,8 @@ function DashboardContent() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Host Dashboard</h1>
-            <p className="text-muted-foreground text-sm">Session ID: {sessionId}</p>
+            <h1 className="text-4xl font-bold">Host Dashboard</h1>
+            <p className="text-muted-foreground text-base">Session ID: {sessionId}</p>
           </div>
           <div className="flex items-center gap-4">
             {demoMode && (
@@ -395,9 +396,9 @@ function DashboardContent() {
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Confusion Gauge */}
-          <Card>
+          <Card className="border-2 border-primary/30">
             <CardHeader>
-              <CardTitle className="flex items-center justify-between">
+              <CardTitle className="flex items-center justify-between text-lg">
                 Confusion Index
                 <Badge variant="outline">Live</Badge>
               </CardTitle>
@@ -408,36 +409,36 @@ function DashboardContent() {
           </Card>
 
           {/* Participants */}
-          <Card>
+          <Card className="border-2 border-primary/30">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Users className="h-5 w-5" />
                 Participants
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-6xl font-bold text-center py-8">
+              <div className="text-7xl font-bold text-center py-8">
                 <AnimatedCounter value={participantCount} />
               </div>
-              <p className="text-center text-sm text-muted-foreground">
+              <p className="text-center text-base text-muted-foreground">
                 Participants connected
               </p>
             </CardContent>
           </Card>
 
           {/* Questions */}
-          <Card>
+          <Card className="border-2 border-primary/30">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <MessageSquare className="h-5 w-5" />
                 Questions
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-6xl font-bold text-center py-8">
+              <div className="text-7xl font-bold text-center py-8">
                 <AnimatedCounter value={questionCount} />
               </div>
-              <p className="text-center text-sm text-muted-foreground">
+              <p className="text-center text-base text-muted-foreground">
                 Questions submitted
               </p>
             </CardContent>
