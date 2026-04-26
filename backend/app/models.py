@@ -53,6 +53,7 @@ class AddressClusterRequest(BaseModel):
     cluster_id: str
     response_type: ResponseType
     custom_response: Optional[str] = None
+    draft_only: bool = False  # When True, generate AI draft without broadcasting or updating status
 
 
 class VerifyWorldIdRequest(BaseModel):

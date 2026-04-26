@@ -20,6 +20,8 @@ function responseTypeBadge(type: string) {
       return <Badge variant="secondary">Flagged for Next Session</Badge>;
     case "text_response":
       return <Badge variant="outline">Custom Response</Badge>;
+    case "send_link":
+      return <Badge variant="outline">Resource Shared</Badge>;
     default:
       return <Badge variant="outline">{type}</Badge>;
   }
@@ -56,11 +58,11 @@ export function BroadcastFeed({ broadcasts }: { broadcasts: Broadcast[] }) {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {b.ai_explanation}
+              {b.professor_response || b.ai_explanation}
             </p>
-            {b.professor_response && (
-              <p className="mt-2 text-sm italic text-foreground/80">
-                &ldquo;{b.professor_response}&rdquo;
+            {b.professor_response && b.ai_explanation && b.professor_response !== b.ai_explanation && (
+              <p className="mt-2 text-xs text-muted-foreground italic">
+                AI draft was edited by instructor
               </p>
             )}
             <p className="mt-2 text-xs text-muted-foreground">

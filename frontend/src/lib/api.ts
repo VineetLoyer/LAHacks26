@@ -156,6 +156,7 @@ export function addressCluster(data: {
   cluster_id: string;
   response_type: string;
   custom_response?: string;
+  draft_only?: boolean;
 }) {
   return request<{
     cluster_id: string;

@@ -44,6 +44,8 @@ import {
   EyeOff,
   Eye,
   RotateCcw,
+  Copy,
+  RefreshCw,
 } from "lucide-react";
 
 interface ClusterData {
@@ -245,53 +247,64 @@ function DashboardContent() {
 
   const handleAddressCluster = useCallback((cluster: ClusterData) => {
     setAddressingCluster(cluster);
-    setAddressResponseType("explained_now");
+    setAddressResponseType("");  // No pre-selected action — AI draft shows first
     setCustomResponse("");
     setAiDraft("");
-    setAiDraftLoading(false);
+    setAiDraftLoading(true);  // Start loading immediately
     setLinkUrl("");
+    // Auto-generate AI draft
+    addressCluster({
+      cluster_id: cluster.id,
+      response_type: "explained_now",
+      draft_only: true,
+    })
+      .then((result) => {
+        setAiDraft(result.ai_explanation || "");
+      })
+      .catch(() => {
+        setAiDraft("Failed to generate AI suggestion.");
+      })
+      .finally(() => {
+        setAiDraftLoading(false);
+      });
   }, []);
 
-  const handleGenerateAiDraft = useCallback(async () => {
+  const handleRegenerateAiDraft = useCallback(async () => {
     if (!addressingCluster) return;
     setAiDraftLoading(true);
+    setAiDraft("");
     try {
-      // Call address with a dry-run-like approach — we'll use the result as a draft
       const result = await addressCluster({
         cluster_id: addressingCluster.id,
         response_type: "explained_now",
+        draft_only: true,
       });
-      const draft = result.ai_explanation || "";
-      setAiDraft(draft);
-      setCustomResponse(draft);
-      // Update the cluster status locally since the backend already marked it
-      setClusters((prev) =>
-        prev.map((c) =>
-          c.id === addressingCluster.id
-            ? { ...c, status: "addressed", ai_explanation: draft, response_type: "explained_now" }
-            : c
-        )
-      );
+      setAiDraft(result.ai_explanation || "");
     } catch {
-      setAiDraft("Failed to generate AI suggestion. You can type your own response.");
+      setAiDraft("Failed to generate AI suggestion.");
     } finally {
       setAiDraftLoading(false);
     }
   }, [addressingCluster]);
 
-  const handleConfirmAddress = useCallback(async () => {
+  const handleConfirmAddress = useCallback(async (overrideType?: string) => {
     if (!addressingCluster) return;
+    const responseType = overrideType || addressResponseType;
+    if (!responseType) return;
     setAddressLoading(true);
     try {
-      // Build the response based on selected type
       let responseText = customResponse;
-      if (addressResponseType === "send_link") {
+      if (responseType === "send_link") {
         responseText = linkUrl ? `📎 Resource: ${linkUrl}${customResponse ? `\n\n${customResponse}` : ""}` : customResponse;
+      }
+      // For "explained_now" (Send AI Response), send the AI draft as custom_response
+      if (responseType === "explained_now" && !responseText && aiDraft) {
+        responseText = aiDraft;
       }
 
       const result = await addressCluster({
         cluster_id: addressingCluster.id,
-        response_type: addressResponseType,
+        response_type: responseType,
         custom_response: responseText || undefined,
       });
       setClusters((prev) =>
@@ -299,7 +312,7 @@ function DashboardContent() {
           c.id === addressingCluster.id
             ? {
                 ...c,
-                status: addressResponseType === "flagged_next_class" ? "flagged" : "addressed",
+                status: responseType === "flagged_next_class" ? "flagged" : "addressed",
                 ai_explanation: result.ai_explanation,
                 response_type: result.response_type,
                 professor_response: responseText || null,
@@ -308,12 +321,13 @@ function DashboardContent() {
         )
       );
       setAddressingCluster(null);
+      setAddressResponseType("");
     } catch {
       // keep modal open on error
     } finally {
       setAddressLoading(false);
     }
-  }, [addressingCluster, addressResponseType, customResponse, linkUrl]);
+  }, [addressingCluster, addressResponseType, customResponse, linkUrl, aiDraft]);
 
   const handleDismissSpike = useCallback(() => {
     setSpikeAlert({ visible: false, message: "" });
@@ -786,73 +800,102 @@ function DashboardContent() {
             </DialogHeader>
 
             <div className="space-y-4">
-              <p className="text-sm font-medium">How do you want to respond?</p>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { value: "explained_now", label: "💡 Answer Now", desc: "AI drafts a response you can edit" },
-                  { value: "send_link", label: "🔗 Send Link", desc: "Share a video, article, or resource" },
-                  { value: "flagged_next_class", label: "📌 Mark for Later", desc: "Address next session" },
-                  { value: "text_response", label: "✏️ Type Response", desc: "Write your own answer" },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => {
-                      setAddressResponseType(option.value);
-                      if (option.value !== "explained_now") setAiDraft("");
-                    }}
-                    className={`text-left p-3 rounded-lg border transition-colors ${
-                      addressResponseType === option.value
-                        ? "border-primary bg-primary/5"
-                        : "border-muted hover:border-muted-foreground/30"
-                    }`}
-                  >
-                    <p className="text-sm font-medium">{option.label}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{option.desc}</p>
-                  </button>
-                ))}
+              {/* AI Draft — always shown at top */}
+              <div className="rounded-lg border bg-muted/50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    AI Suggested Response
+                  </p>
+                  <div className="flex items-center gap-1">
+                    {aiDraft && !aiDraftLoading && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => navigator.clipboard.writeText(aiDraft)}
+                        >
+                          <Copy className="h-3 w-3 mr-1" />
+                          Copy
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={handleRegenerateAiDraft}
+                        >
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          Regenerate
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {aiDraftLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    AI is drafting a response...
+                  </div>
+                ) : aiDraft ? (
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-y-auto">
+                    {aiDraft}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground py-4 text-center">
+                    No AI suggestion available
+                  </p>
+                )}
               </div>
 
-              {/* Answer Now — AI Draft */}
-              {addressResponseType === "explained_now" && (
+              {/* Action buttons row */}
+              {!addressResponseType && (
                 <div className="space-y-2">
-                  {!aiDraft && !aiDraftLoading && (
+                  <p className="text-sm font-medium">Choose an action:</p>
+                  <div className="grid grid-cols-2 gap-2">
                     <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleGenerateAiDraft}
-                      className="w-full"
+                      className="h-auto py-3 flex-col items-start"
+                      onClick={() => handleConfirmAddress("explained_now")}
+                      disabled={addressLoading || aiDraftLoading || !aiDraft}
                     >
-                      <Sparkles className="h-4 w-4 mr-1" />
-                      Generate AI Suggestion
+                      <span className="text-sm font-medium">💡 Send AI Response</span>
+                      <span className="text-xs opacity-80 font-normal">Send the AI draft above to students</span>
                     </Button>
-                  )}
-                  {aiDraftLoading && (
-                    <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      AI is drafting a response...
-                    </div>
-                  )}
-                  {aiDraft && !aiDraftLoading && (
-                    <>
-                      <p className="text-xs text-muted-foreground">AI suggestion — edit before sending:</p>
-                      <textarea
-                        className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        value={customResponse}
-                        onChange={(e) => setCustomResponse(e.target.value)}
-                        placeholder="Edit the AI suggestion or write your own..."
-                      />
-                    </>
-                  )}
+                    <button
+                      onClick={() => setAddressResponseType("send_link")}
+                      className="text-left p-3 rounded-lg border border-muted hover:border-muted-foreground/30 transition-colors"
+                    >
+                      <p className="text-sm font-medium">🔗 Send Link</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Share a video, article, or resource</p>
+                    </button>
+                    <button
+                      onClick={() => handleConfirmAddress("flagged_next_class")}
+                      disabled={addressLoading}
+                      className="text-left p-3 rounded-lg border border-muted hover:border-muted-foreground/30 transition-colors"
+                    >
+                      <p className="text-sm font-medium">📌 Mark for Later</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Flag for next session</p>
+                    </button>
+                    <button
+                      onClick={() => setAddressResponseType("text_response")}
+                      className="text-left p-3 rounded-lg border border-muted hover:border-muted-foreground/30 transition-colors"
+                    >
+                      <p className="text-sm font-medium">✏️ Type Response</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Write your own answer</p>
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Send Link */}
+              {/* Send Link input */}
               {addressResponseType === "send_link" && (
                 <div className="space-y-2">
+                  <p className="text-sm font-medium">🔗 Send Link</p>
                   <Input
                     placeholder="Paste URL (YouTube, article, docs...)"
                     value={linkUrl}
                     onChange={(e) => setLinkUrl(e.target.value)}
+                    autoFocus
                   />
                   <Input
                     placeholder="Optional note for students..."
@@ -862,41 +905,49 @@ function DashboardContent() {
                 </div>
               )}
 
-              {/* Type Response */}
+              {/* Type Response input */}
               {addressResponseType === "text_response" && (
-                <textarea
-                  className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  placeholder="Type your response to students..."
-                  value={customResponse}
-                  onChange={(e) => setCustomResponse(e.target.value)}
-                />
-              )}
-
-              {/* Mark for Later — just a confirmation message */}
-              {addressResponseType === "flagged_next_class" && (
-                <p className="text-sm text-muted-foreground bg-muted rounded-lg p-3">
-                  This cluster will be flagged and included in the session report as a topic to revisit next class.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">✏️ Type Response</p>
+                  <textarea
+                    className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="Type your response to students..."
+                    value={customResponse}
+                    onChange={(e) => setCustomResponse(e.target.value)}
+                    autoFocus
+                  />
+                </div>
               )}
             </div>
 
-            <DialogFooter>
-              <Button
-                onClick={handleConfirmAddress}
-                disabled={addressLoading}
-              >
-                {addressLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Sending...
-                  </>
-                ) : addressResponseType === "flagged_next_class" ? (
-                  "Flag for Later"
-                ) : (
-                  "Send to Students"
-                )}
-              </Button>
-            </DialogFooter>
+            {/* Footer — only show when an input mode is active */}
+            {(addressResponseType === "send_link" || addressResponseType === "text_response") && (
+              <DialogFooter>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setAddressResponseType("");
+                    setCustomResponse("");
+                    setLinkUrl("");
+                  }}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={() => handleConfirmAddress()}
+                  disabled={addressLoading}
+                >
+                  {addressLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    "Send to Students"
+                  )}
+                </Button>
+              </DialogFooter>
+            )}
           </DialogContent>
         </Dialog>
       </div>

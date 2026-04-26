@@ -367,7 +367,8 @@ async def address_cluster(req: AddressClusterRequest):
     explanation = ""
 
     # Only generate AI explanation for "explained_now" response type
-    if req.response_type == "explained_now" and gemini_client:
+    # Skip if custom_response is provided (professor already edited the draft)
+    if req.response_type == "explained_now" and gemini_client and not req.custom_response:
         q_cursor = db.questions.find({"cluster_id": ObjectId(req.cluster_id)})
         questions = await q_cursor.to_list(length=50)
         q_texts = [q["text"] for q in questions]
@@ -405,6 +406,15 @@ encouraging — these students were anxious about asking."""
             contents=prompt,
         )
         explanation = response.text
+
+    # If draft_only, return the AI explanation without updating status or broadcasting
+    if req.draft_only:
+        return {
+            "cluster_id": req.cluster_id,
+            "ai_explanation": explanation,
+            "response_type": req.response_type,
+            "status": cluster.get("status", "pending"),
+        }
 
     # Determine cluster status based on response type
     if req.response_type == "flagged_next_class":
