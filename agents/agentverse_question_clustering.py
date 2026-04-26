@@ -42,11 +42,16 @@ def _get_db():
 
 
 def _extract_session_code(text):
-    """Extract a 6-char alphanumeric session code that contains at least one digit."""
+    """Extract a 6-char alphanumeric session code from text."""
     codes = re.findall(r"\b([A-Z0-9]{6})\b", text.upper())
-    for c in codes:
-        if any(ch.isdigit() for ch in c):
-            return c
+    if codes:
+        mixed = [c for c in codes if any(ch.isdigit() for ch in c) and any(ch.isalpha() for ch in c)]
+        if mixed:
+            return mixed[0]
+        return codes[0]
+    pattern = re.search(r"(?:session|code|room)[:\s]+([A-Z0-9]{4,8})", text.upper())
+    if pattern:
+        return pattern.group(1)
     return None
 
 

@@ -43,12 +43,46 @@ def _get_db():
 
 
 def _extract_session_code(text):
-    """Extract a 6-char alphanumeric session code that contains at least one digit."""
+    """Extract a 6-char alphanumeric session code from text.
+    
+    Tries multiple strategies:
+    1. Look for any 6-char uppercase alphanumeric pattern
+    2. If multiple found, prefer ones with mixed letters+digits
+    3. If none found, check if user is asking about recent sessions
+    """
+    # Strategy 1: Find all 6-char alphanumeric patterns
     codes = re.findall(r"\b([A-Z0-9]{6})\b", text.upper())
-    for c in codes:
-        if any(ch.isdigit() for ch in c):
-            return c
+    if codes:
+        # Prefer codes with mixed letters and digits (more likely to be session codes)
+        mixed = [c for c in codes if any(ch.isdigit() for ch in c) and any(ch.isalpha() for ch in c)]
+        if mixed:
+            return mixed[0]
+        # Fall back to any 6-char code (even all-letters like KKJCIO)
+        return codes[0]
+    
+    # Strategy 2: Look for codes mentioned with context like "session XXXXXX" or "code: XXXXXX"
+    pattern = re.search(r"(?:session|code|room)[:\s]+([A-Z0-9]{4,8})", text.upper())
+    if pattern:
+        return pattern.group(1)
+    
     return None
+
+
+def _list_recent_sessions():
+    """List recent active sessions so the user can pick one."""
+    db = _get_db()
+    sessions = list(db.sessions.find(
+        {"status": {"$ne": "ended"}},
+    ).sort("created_at", -1).limit(5))
+    
+    if not sessions:
+        return "No active sessions found."
+    
+    lines = ["Here are the recent sessions:"]
+    for s in sessions:
+        lines.append(f"  - {s.get('code', '?')} — \"{s.get('title', 'Untitled')}\" ({s.get('status', 'unknown')})")
+    lines.append("\nPlease include the session code in your message.")
+    return "\n".join(lines)
 
 
 def _compute_confusion_analytics(session_code):

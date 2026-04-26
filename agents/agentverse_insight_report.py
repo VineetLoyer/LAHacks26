@@ -42,11 +42,16 @@ def _get_db():
 
 
 def _extract_session_code(text):
-    """Extract a 6-char alphanumeric session code that contains at least one digit."""
+    """Extract a 6-char alphanumeric session code from text."""
     codes = re.findall(r"\b([A-Z0-9]{6})\b", text.upper())
-    for c in codes:
-        if any(ch.isdigit() for ch in c):
-            return c
+    if codes:
+        mixed = [c for c in codes if any(ch.isdigit() for ch in c) and any(ch.isalpha() for ch in c)]
+        if mixed:
+            return mixed[0]
+        return codes[0]
+    pattern = re.search(r"(?:session|code|room)[:\s]+([A-Z0-9]{4,8})", text.upper())
+    if pattern:
+        return pattern.group(1)
     return None
 
 
@@ -180,13 +185,24 @@ async def handle_message(ctx: Context, sender: str, msg: ChatMessage):
     if session_code:
         response = _generate_session_report(session_code)
     else:
+        # Try to list recent sessions to help the user
+        db = _get_db()
+        sessions = list(db.sessions.find().sort("_id", -1).limit(5))
+        session_list = ""
+        if sessions:
+            session_list = "\n\nRecent sessions:\n" + "\n".join(
+                f"  - {s.get('code', '?')} — \"{s.get('title', 'Untitled')}\""
+                for s in sessions
+            )
         response = (
             "Hi! I'm the AskSafe Insight Report Agent.\n\n"
-            "I generate comprehensive post-session analytics reports.\n\n"
+            "I generate comprehensive post-session analytics reports "
+            "by coordinating with the Confusion Monitor Agent and Question Clustering Agent.\n\n"
             "Try asking:\n"
             "- Generate a report for session ABC123\n"
-            "- Summarize this lecture session ABC123\n\n"
+            "- How did my DSCI553 lecture go? Session ABC123\n\n"
             "Include a 6-character session code and I'll compile the full analytics."
+            + session_list
         )
 
     await ctx.send(sender, create_text_chat(response))
