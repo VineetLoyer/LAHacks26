@@ -67,13 +67,9 @@ async def generate_clusters(session_id: str):
 
     q_list = [{"id": str(q["_id"]), "text": q["text"], "slide": q.get("slide")} for q in questions]
 
-    # Build slide context from session document
+    # Build slide context from session document — include ALL slides for context
     slide_contexts = session.get("slide_contexts", [])
-    tagged_slides = set()
-    for q in questions:
-        if q.get("slide") is not None:
-            tagged_slides.add(q["slide"])
-    slide_context_text = _build_slide_context_text(slide_contexts, tagged_slides)
+    slide_context_text = _build_slide_context_text(slide_contexts)  # all slides, no filter
 
     # Build the prompt with optional slide context
     slide_section = ""
@@ -93,6 +89,8 @@ IMPORTANT CLUSTERING RULES:
 - Logistical questions (homework deadlines, exam dates, grading) should be their OWN cluster, separate from conceptual questions.
 - If a question is unique and doesn't fit any cluster, put it in its own single-question cluster.
 - Each cluster should contain questions about the SAME specific topic.
+- A question is ON-TOPIC if it relates to ANY concept that could reasonably be covered in a course called "{session['title']}". This includes data streams, algorithms, data structures, filtering, sampling, counting, sliding windows, Bloom filters, DGIM, Flajolet-Martin, or any related computer science concept.
+- Only mark as OFF-TOPIC if the question is completely unrelated to the course (e.g., "what time is lunch?", "when is the midterm?", "can we get the slides posted?").
 {slide_section}
 Questions:
 {json.dumps(q_list, indent=2)}
