@@ -178,7 +178,7 @@ def _generate_session_report(session_code):
             lines.append("🎉 Great job! Most participant concerns were addressed during the session.")
 
     # Participant feedback
-    feedback_docs = list(db.feedback.find({"session_id": session_id}).limit(100))
+    feedback_docs = list(db.session_feedback.find({"session_id": session_id}).limit(100))
     if feedback_docs:
         lines.append("")
         lines.append("━━━ Participant Feedback ━━━")
