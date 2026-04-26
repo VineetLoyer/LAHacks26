@@ -435,17 +435,25 @@ encouraging — these students were anxious about asking."""
         {"$set": update_data},
     )
 
-    # Only broadcast to students if the professor is actually responding
-    # (not for "flagged_next_class" — that's internal)
-    if session and req.response_type != "flagged_next_class":
-        broadcast_response = req.custom_response or explanation
-        await sio.emit("cluster_addressed", {
-            "cluster_id": req.cluster_id,
-            "label": cluster["label"],
-            "ai_explanation": explanation,
-            "professor_response": req.custom_response,
-            "response_type": req.response_type,
-        }, room=session["code"])
+    # Broadcast to students for all response types
+    # For "flagged_next_class", let students know it will be addressed next session
+    if session:
+        if req.response_type == "flagged_next_class":
+            await sio.emit("cluster_addressed", {
+                "cluster_id": req.cluster_id,
+                "label": cluster["label"],
+                "ai_explanation": "Your professor has seen this question and will address it in the next session.",
+                "professor_response": req.custom_response,
+                "response_type": req.response_type,
+            }, room=session["code"])
+        else:
+            await sio.emit("cluster_addressed", {
+                "cluster_id": req.cluster_id,
+                "label": cluster["label"],
+                "ai_explanation": explanation,
+                "professor_response": req.custom_response,
+                "response_type": req.response_type,
+            }, room=session["code"])
 
     return {
         "cluster_id": req.cluster_id,

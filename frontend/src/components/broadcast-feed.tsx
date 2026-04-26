@@ -47,7 +47,11 @@ export function BroadcastFeed({ broadcasts }: { broadcasts: Broadcast[] }) {
       {broadcasts.map((b, i) => (
         <Card
           key={`${b.cluster_id}-${i}`}
-          className="broadcast-slide-in border-blue-400/50"
+          className={`broadcast-slide-in ${
+            b.response_type === "flagged_next_class"
+              ? "border-amber-400/50 bg-amber-50/30 dark:bg-amber-950/10"
+              : "border-blue-400/50"
+          }`}
           style={{ animationDelay: `${i * 60}ms` }}
         >
           <CardHeader className="pb-1">
