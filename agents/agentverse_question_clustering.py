@@ -194,6 +194,31 @@ async def handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Synchronous Model handler for OmegaClaw integration
+# ---------------------------------------------------------------------------
+from uagents import Model
+from uagents.experimental.quota import QuotaProtocol, RateLimit
+
+class AskSafeRequest(Model):
+    session_code: str
+
+class AskSafeResponse(Model):
+    response: str
+
+sync_proto = QuotaProtocol(
+    storage_reference=agent.storage,
+    name="AskSafe-Question-Clustering",
+    version="0.1.0",
+    default_rate_limit=RateLimit(window_size_minutes=60, max_requests=30),
+)
+
+@sync_proto.on_message(AskSafeRequest, replies={AskSafeResponse})
+async def handle_sync_request(ctx: Context, sender: str, msg: AskSafeRequest):
+    result = _cluster_session_questions(msg.session_code)
+    await ctx.send(sender, AskSafeResponse(response=result))
+
+agent.include(sync_proto, publish_manifest=True)
 agent.include(protocol, publish_manifest=True)
 
 if __name__ == "__main__":
