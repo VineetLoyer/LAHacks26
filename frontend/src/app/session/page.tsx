@@ -233,22 +233,22 @@ function SessionContent() {
     const isUpvoted = upvotedIds.includes(clusterId);
     try {
       if (isUpvoted) {
-        // Downvote (remove upvote)
-        await downvoteCluster(clusterId);
+        const result = await downvoteCluster(clusterId);
         const updated = upvotedIds.filter((id) => id !== clusterId);
         setUpvotedIds(updated);
         storeUpvotedIds(sessionCode, updated);
+        // Use server's actual count from API response
         setClusters((prev) =>
-          prev.map((c) => (c.id === clusterId ? { ...c, upvotes: Math.max(0, c.upvotes - 1) } : c))
+          prev.map((c) => (c.id === clusterId ? { ...c, upvotes: result.upvotes } : c))
         );
       } else {
-        // Upvote
-        await upvoteCluster(clusterId);
+        const result = await upvoteCluster(clusterId);
         const updated = [...upvotedIds, clusterId];
         setUpvotedIds(updated);
         storeUpvotedIds(sessionCode, updated);
+        // Use server's actual count from API response
         setClusters((prev) =>
-          prev.map((c) => (c.id === clusterId ? { ...c, upvotes: c.upvotes + 1 } : c))
+          prev.map((c) => (c.id === clusterId ? { ...c, upvotes: result.upvotes } : c))
         );
       }
     } catch {
