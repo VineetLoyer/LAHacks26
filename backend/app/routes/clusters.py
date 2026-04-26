@@ -232,7 +232,6 @@ async def upvote_cluster(cluster_id: str):
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Cluster not found")
 
-    # Fetch updated cluster to get new upvote count and session_id
     cluster = await db.clusters.find_one({"_id": ObjectId(cluster_id)})
     if cluster:
         session = await db.sessions.find_one({"_id": cluster["session_id"]})
@@ -242,7 +241,31 @@ async def upvote_cluster(cluster_id: str):
                 "upvotes": cluster["upvotes"],
             }, room=session["code"])
 
-    return {"status": "upvoted"}
+    return {"status": "upvoted", "upvotes": cluster["upvotes"] if cluster else 0}
+
+
+@router.post("/downvote/{cluster_id}")
+async def downvote_cluster(cluster_id: str):
+    """Remove an upvote from a cluster (toggle)."""
+    db = get_db()
+    # Only decrement if upvotes > 0
+    result = await db.clusters.update_one(
+        {"_id": ObjectId(cluster_id), "upvotes": {"$gt": 0}},
+        {"$inc": {"upvotes": -1}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Cluster not found or no upvotes")
+
+    cluster = await db.clusters.find_one({"_id": ObjectId(cluster_id)})
+    if cluster:
+        session = await db.sessions.find_one({"_id": cluster["session_id"]})
+        if session:
+            await sio.emit("cluster_upvoted", {
+                "cluster_id": cluster_id,
+                "upvotes": cluster["upvotes"],
+            }, room=session["code"])
+
+    return {"status": "downvoted", "upvotes": cluster["upvotes"] if cluster else 0}
 
 
 @router.patch("/{cluster_id}/hide")

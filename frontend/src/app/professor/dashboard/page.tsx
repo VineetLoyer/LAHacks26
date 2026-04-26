@@ -123,6 +123,17 @@ function DashboardContent() {
       .catch(() => {});
   }, [sessionId]);
 
+  // Periodic cluster refresh (fallback for intermittent Socket.IO upvote events)
+  useEffect(() => {
+    if (!sessionId) return;
+    const interval = setInterval(() => {
+      listClusters(sessionId)
+        .then((data) => setClusters(data.clusters))
+        .catch(() => {});
+    }, 5000); // refresh every 5 seconds
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
   // --- Socket.IO setup ---
   useEffect(() => {
     if (!sessionCode) return;

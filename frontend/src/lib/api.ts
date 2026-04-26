@@ -127,7 +127,13 @@ export function listClusters(sessionId: string) {
 }
 
 export function upvoteCluster(clusterId: string) {
-  return request<{ status: string }>(`/api/clusters/upvote/${clusterId}`, {
+  return request<{ status: string; upvotes: number }>(`/api/clusters/upvote/${clusterId}`, {
+    method: "POST",
+  });
+}
+
+export function downvoteCluster(clusterId: string) {
+  return request<{ status: string; upvotes: number }>(`/api/clusters/downvote/${clusterId}`, {
     method: "POST",
   });
 }

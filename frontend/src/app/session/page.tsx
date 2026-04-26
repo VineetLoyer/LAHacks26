@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { submitQuestion, submitCheckin, listClusters, upvoteCluster, optInEmail, submitFeedback } from "@/lib/api";
+import { submitQuestion, submitCheckin, listClusters, upvoteCluster, downvoteCluster, optInEmail, submitFeedback } from "@/lib/api";
 import { getSocket, joinRoom } from "@/lib/socket";
 import { BroadcastFeed, type Broadcast } from "@/components/broadcast-feed";
 import { WhisperButton } from "@/components/whisper-button";
@@ -229,17 +229,28 @@ function SessionContent() {
     [sessionId, checkinSlide]
   );
 
-  async function handleUpvote(clusterId: string) {
-    if (upvotedIds.includes(clusterId)) return;
+  async function handleToggleUpvote(clusterId: string) {
+    const isUpvoted = upvotedIds.includes(clusterId);
     try {
-      await upvoteCluster(clusterId);
-      const updated = [...upvotedIds, clusterId];
-      setUpvotedIds(updated);
-      storeUpvotedIds(sessionCode, updated);
-      // Optimistic update — real-time event will also arrive
-      setClusters((prev) =>
-        prev.map((c) => (c.id === clusterId ? { ...c, upvotes: c.upvotes + 1 } : c))
-      );
+      if (isUpvoted) {
+        // Downvote (remove upvote)
+        await downvoteCluster(clusterId);
+        const updated = upvotedIds.filter((id) => id !== clusterId);
+        setUpvotedIds(updated);
+        storeUpvotedIds(sessionCode, updated);
+        setClusters((prev) =>
+          prev.map((c) => (c.id === clusterId ? { ...c, upvotes: Math.max(0, c.upvotes - 1) } : c))
+        );
+      } else {
+        // Upvote
+        await upvoteCluster(clusterId);
+        const updated = [...upvotedIds, clusterId];
+        setUpvotedIds(updated);
+        storeUpvotedIds(sessionCode, updated);
+        setClusters((prev) =>
+          prev.map((c) => (c.id === clusterId ? { ...c, upvotes: c.upvotes + 1 } : c))
+        );
+      }
     } catch {
       // silently fail
     }
@@ -407,9 +418,8 @@ function SessionContent() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={upvotedIds.includes(cluster.id)}
-                    onClick={() => handleUpvote(cluster.id)}
-                    className="flex items-center gap-1 shrink-0"
+                    onClick={() => handleToggleUpvote(cluster.id)}
+                    className={`flex items-center gap-1 shrink-0 ${upvotedIds.includes(cluster.id) ? "text-primary" : ""}`}
                   >
                     <ArrowUpCircle className="h-4 w-4" />
                     <span>{cluster.upvotes}</span>
