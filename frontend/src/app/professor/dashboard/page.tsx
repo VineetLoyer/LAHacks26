@@ -123,14 +123,23 @@ function DashboardContent() {
       .catch(() => {});
   }, [sessionId]);
 
-  // Periodic cluster refresh (fallback for intermittent Socket.IO upvote events)
+  // Periodic refresh (fallback for intermittent Socket.IO events)
   useEffect(() => {
     if (!sessionId) return;
     const interval = setInterval(() => {
+      // Refresh clusters (upvote counts)
       listClusters(sessionId)
         .then((data) => setClusters(data.clusters))
         .catch(() => {});
-    }, 5000); // refresh every 5 seconds
+      // Refresh stats (participant count, question count, confusion)
+      getSessionStats(sessionId)
+        .then((stats) => {
+          setParticipantCount(stats.participant_count);
+          setQuestionCount(stats.total_questions);
+          setConfusionIndex(stats.confusion_index);
+        })
+        .catch(() => {});
+    }, 5000);
     return () => clearInterval(interval);
   }, [sessionId]);
 
