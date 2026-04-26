@@ -100,69 +100,82 @@ def _generate_session_report(session_code):
     overall_confused = sum(1 for c in checkins if c.get("confusion_rating", 0) >= 4)
     overall_index = round((overall_confused / total_checkins) * 100) if total_checkins > 0 else 0
 
-    # Build report with multi-agent coordination narrative
+    # Build report — conversational, well-structured for ASI:One chat
     lines = []
-    session_status = "Ended" if status == "ended" else "Active"
-    lines.append(f"Session Report: \"{title}\" ({session_code})\n")
-    lines.append(f"Status: {session_status}")
-    lines.append(f"[Compiled by AskSafe Report Agent using data from Confusion Monitor Agent and Question Clustering Agent]\n")
+    session_status = "🔴 Ended" if status == "ended" else "🟢 Active"
+    status_emoji = "🟢" if overall_index < 40 else ("🟡" if overall_index < 70 else "🔴")
+    
+    lines.append(f"📊 Session Report: {title}")
+    lines.append(f"Session: {session_code} | Status: {session_status}")
+    lines.append(f"Compiled by AskSafe Report Agent (coordinating Confusion Monitor + Question Clustering agents)")
+    lines.append("")
 
-    lines.append("Key Statistics:")
-    lines.append(f"  Participants: {total_participants}")
-    lines.append(f"  Check-ins: {total_checkins}")
-    lines.append(f"  Questions: {total_questions}")
-    lines.append(f"  Clusters: {total_clusters} ({clusters_addressed} addressed)")
-    lines.append(f"  Overall confusion: {overall_index}%\n")
+    # Key stats in a compact block
+    lines.append("━━━ Key Statistics ━━━")
+    lines.append(f"  👥 Participants: {total_participants}")
+    lines.append(f"  📝 Check-ins: {total_checkins} | Questions: {total_questions}")
+    lines.append(f"  📋 Clusters: {total_clusters} ({clusters_addressed} addressed)")
+    lines.append(f"  {status_emoji} Overall Confusion: {overall_index}%")
+    lines.append("")
 
-    # Confusion analysis (from Confusion Monitor Agent)
-    lines.append("--- Confusion Analysis (via Confusion Monitor Agent) ---")
+    # Confusion timeline — visual bar chart
+    lines.append("━━━ Confusion Timeline (via Confusion Monitor Agent) ━━━")
     if timeline:
-        lines.append("Per-Slide Confusion:")
         for t in timeline:
-            marker = " << SPIKE" if t["pct"] >= threshold else ""
-            lines.append(f"  Slide {t['slide']:>2}: {t['pct']:>3}% ({t['responses']} responses){marker}")
+            pct = t["pct"]
+            bar_len = pct // 10
+            bar = "█" * bar_len + "░" * (10 - bar_len)
+            spike_mark = " 🔥" if pct >= threshold else ""
+            lines.append(f"  Slide {t['slide']:>2} │{bar}│ {pct:>3}%{spike_mark}")
         lines.append("")
 
     if spikes:
-        lines.append(f"Spikes Detected ({len(spikes)}):")
+        lines.append(f"🚨 {len(spikes)} Spike{'s' if len(spikes) > 1 else ''} Detected:")
         for spike in spikes:
             spike_qs = [q.get("text", "") for q in questions if q.get("slide") == spike["slide"]]
             context = ""
             if spike_qs:
-                context = f" -- students asked: \"{spike_qs[0][:80]}\""
-            lines.append(f"  Slide {spike['slide']}: {spike['pct']}% confused{context}")
+                context = f'\n      Participants asked: "{spike_qs[0][:70]}"'
+            lines.append(f"  ⚠️ Slide {spike['slide']}: {spike['pct']}% confused{context}")
         lines.append("")
     else:
-        lines.append("No confusion spikes detected.\n")
-
-    # Cluster analysis (from Question Clustering Agent)
-    lines.append("--- Question Clusters (via Question Clustering Agent) ---")
-    if clusters:
-        sorted_c = sorted(clusters, key=lambda c: len(c.get("question_ids", [])), reverse=True)
-        for c in sorted_c[:5]:
-            icon = "[Done]" if c.get("status") == "addressed" else "[Pending]"
-            summary = c.get("summary", "")
-            lines.append(f"  {icon} {c.get('label', 'Unnamed')} ({len(c.get('question_ids', []))} questions, {c.get('upvotes', 0)} upvotes)")
-            if summary:
-                lines.append(f"       {summary}")
+        lines.append("✅ No confusion spikes detected.")
         lines.append("")
 
-    # Recommendations (synthesized by Report Agent)
-    lines.append("--- Recommendations (synthesized by Report Agent) ---")
-    unaddressed = [c.get("label", "") for c in clusters if c.get("status") != "addressed" and c.get("on_topic", True)]
+    # Cluster analysis
+    lines.append("━━━ Question Clusters (via Question Clustering Agent) ━━━")
+    if clusters:
+        sorted_c = sorted(clusters, key=lambda c: len(c.get("question_ids", [])), reverse=True)
+        for c in sorted_c[:6]:
+            status_icon = "✅" if c.get("status") == "addressed" else "📌" if c.get("status") == "flagged" else "⏳"
+            label = c.get("label", "Unnamed")
+            q_count = len(c.get("question_ids", []))
+            upvotes = c.get("upvotes", 0)
+            summary = c.get("summary", "")
+            lines.append(f"  {status_icon} {label} ({q_count} questions, {upvotes} upvotes)")
+            if summary:
+                lines.append(f"     {summary[:100]}")
+        lines.append("")
+    else:
+        lines.append("  No clusters generated yet.")
+        lines.append("")
+
+    # Recommendations
+    lines.append("━━━ Recommendations ━━━")
+    unaddressed = [c.get("label", "") for c in clusters if c.get("status") not in ("addressed",) and c.get("on_topic", True)]
     if unaddressed:
-        lines.append("Topics to revisit next session:")
+        lines.append("📌 Topics to revisit next session:")
         for topic in unaddressed:
-            lines.append(f"  - {topic}")
+            lines.append(f"  • {topic}")
         lines.append("")
 
     if total_clusters > 0:
         rate = round((clusters_addressed / total_clusters) * 100)
-        lines.append(f"Resolution Rate: {rate}%")
+        lines.append(f"📊 Resolution Rate: {rate}%")
         if rate < 50:
-            lines.append("Recommendation: Consider dedicating more time to addressing student questions during the session.")
+            lines.append("💡 Consider dedicating more time to addressing participant questions during the session.")
         elif rate >= 80:
-            lines.append("Great job! Most student concerns were addressed during the session.")
+            lines.append("🎉 Great job! Most participant concerns were addressed during the session.")
 
     return "\n".join(lines)
 

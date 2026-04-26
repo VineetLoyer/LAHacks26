@@ -117,25 +117,44 @@ def _cluster_session_questions(session_code):
             source = "fallback (single cluster)"
 
     lines = []
-    lines.append(f"Question Clusters for \"{title}\" ({session_code})\n")
-    lines.append(f"{len(questions)} total questions | Source: {source}\n")
+    lines.append(f"📋 Question Clusters: {title}")
+    lines.append(f"Session: {session_code}")
+    lines.append(f"📝 {len(questions)} total questions | Source: {source}")
+    lines.append("")
 
-    for i, c in enumerate(clusters, 1):
-        label = c.get("label", "Unnamed")
-        q_ids = c.get("question_ids", [])
-        rep = c.get("representative_question", "")
-        on_topic = c.get("on_topic", True)
-        upvotes = c.get("upvotes", 0)
-        status = c.get("status", "pending")
+    on_topic_clusters = [c for c in clusters if c.get("on_topic", True)]
+    off_topic_clusters = [c for c in clusters if not c.get("on_topic", True)]
 
-        topic = "On-topic" if on_topic else "Off-topic"
-        status_mark = " [Addressed]" if status == "addressed" else ""
+    if on_topic_clusters:
+        lines.append("📚 On-Topic Clusters:")
+        for i, c in enumerate(on_topic_clusters, 1):
+            label = c.get("label", "Unnamed")
+            q_ids = c.get("question_ids", [])
+            rep = c.get("representative_question", "")
+            upvotes = c.get("upvotes", 0)
+            status = c.get("status", "pending")
 
-        lines.append(f"Cluster {i}: {label} ({topic}){status_mark}")
-        lines.append(f"  {len(q_ids)} question(s) | {upvotes} upvotes")
-        if rep:
-            lines.append(f"  Representative: \"{rep}\"")
-        lines.append("")
+            status_icon = "✅" if status == "addressed" else "📌" if status == "flagged" else "⏳"
+            lines.append(f"  {status_icon} {label}")
+            lines.append(f"     {len(q_ids)} questions · {upvotes} upvotes")
+            if rep:
+                lines.append(f'     Example: "{rep[:80]}"')
+            lines.append("")
+
+    if off_topic_clusters:
+        lines.append("🔀 Off-Topic / Logistics:")
+        for c in off_topic_clusters:
+            label = c.get("label", "Unnamed")
+            q_ids = c.get("question_ids", [])
+            rep = c.get("representative_question", "")
+            lines.append(f"  💬 {label} ({len(q_ids)} questions)")
+            if rep:
+                lines.append(f'     Example: "{rep[:80]}"')
+            lines.append("")
+
+    addressed = sum(1 for c in clusters if c.get("status") == "addressed")
+    if clusters:
+        lines.append(f"📊 Resolution: {addressed}/{len(clusters)} clusters addressed")
 
     return "\n".join(lines)
 

@@ -145,43 +145,62 @@ def _compute_confusion_analytics(session_code):
             {"session_id": session_id, "slide": slide_num}
         ).limit(3))
         sample_texts = [q.get("text", "") for q in sample_questions if q.get("text")]
-        topic_hint = ""
+        
+        summary = f"Slide {slide_num}: {spike['confusion_pct']}% confused ({q_count} questions nearby)"
         if sample_texts:
-            topic_hint = " about " + ", ".join(['"' + t[:60] + '"' for t in sample_texts[:2]])
-        spike_summaries.append(
-            f"Confusion spiked to {spike['confusion_pct']}% on slide {slide_num} "
-            f"-- {q_count} question(s){topic_hint} submitted around that slide"
-        )
+            summary += "\n      Participants asked: " + " / ".join(['"' + t[:50] + '"' for t in sample_texts[:2]])
+        spike_summaries.append(summary)
 
-    # Build response
+    # Build response — conversational and well-formatted for ASI:One chat
     lines = []
-    lines.append(f"Confusion Report for \"{title}\" ({session_code})\n")
+    
+    # Header with status emoji
+    status_emoji = "🟢" if overall_index < 40 else ("🟡" if overall_index < 70 else "🔴")
+    lines.append(f"{status_emoji} Confusion Report: {title}")
+    lines.append(f"Session: {session_code}")
+    lines.append("")
 
-    status_emoji = "GREEN" if overall_index < 40 else ("YELLOW" if overall_index < 70 else "RED")
-    lines.append(f"[{status_emoji}] Overall Confusion Index: {overall_index}%")
-    lines.append(f"Average rating: {avg_rating}/5 across {total} check-ins")
-    lines.append(f"Spike threshold: {threshold}%\n")
+    # Quick summary
+    if overall_index < 30:
+        mood = "Participants are following along well!"
+    elif overall_index < 50:
+        mood = "Some participants are struggling — a few areas need attention."
+    elif overall_index < 70:
+        mood = "Significant confusion detected — consider revisiting key topics."
+    else:
+        mood = "High confusion across the session — participants need help."
+    
+    lines.append(f"📊 Overall Confusion: {overall_index}% — {mood}")
+    lines.append(f"📝 {total} check-ins | Average rating: {avg_rating}/5")
+    lines.append("")
 
+    # Spikes — the most important part
     if spikes:
-        lines.append(f"{len(spikes)} confusion spike(s) detected:")
-        for summary in spike_summaries:
-            lines.append(f"  - {summary}")
+        lines.append(f"🚨 {len(spikes)} Confusion Spike{'s' if len(spikes) > 1 else ''} Detected:")
+        lines.append("")
+        for spike in spike_summaries:
+            lines.append(f"  ⚠️ {spike}")
         lines.append("")
     else:
-        lines.append("No confusion spikes detected.\n")
-
-    if slide_breakdown:
-        lines.append("Per-Slide Breakdown:")
-        for sb in slide_breakdown:
-            marker = " << SPIKE" if sb["confusion_pct"] >= threshold else ""
-            lines.append(f"  Slide {sb['slide']:>2}: {sb['confusion_pct']:>3}% ({sb['responses']} responses){marker}")
+        lines.append("✅ No confusion spikes — participants stayed within comfort zone.")
         lines.append("")
 
+    # Compact slide breakdown — visual bar chart style
+    if slide_breakdown:
+        lines.append("📈 Per-Slide Breakdown:")
+        for sb in slide_breakdown:
+            pct = sb["confusion_pct"]
+            bar_len = pct // 10  # 0-10 blocks
+            bar = "█" * bar_len + "░" * (10 - bar_len)
+            spike_mark = " 🔥" if pct >= threshold else ""
+            lines.append(f"  Slide {sb['slide']:>2} │{bar}│ {pct:>3}% ({sb['responses']}){spike_mark}")
+        lines.append("")
+
+    # Actionable next step
     if spikes:
         lines.append(
-            "Tip: Try querying the AskSafe Question Clustering Agent "
-            "with this session code to see what specific topics students "
-            "are struggling with on the spike slides."
+            "💡 Next step: Ask the AskSafe Question Clustering Agent about this session "
+            "to see exactly what topics participants are struggling with on the spike slides."
         )
 
     return "\n".join(lines)
