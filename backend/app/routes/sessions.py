@@ -500,7 +500,7 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 @router.post("/{session_id}/opt-in-email")
 async def opt_in_email(session_id: str, req: OptInEmailRequest):
-    """Store a student's email for post-session summary delivery."""
+    """Store a participant's email and send summary immediately if session already ended."""
     db = get_db()
     sid = ObjectId(session_id)
 
@@ -524,7 +524,42 @@ async def opt_in_email(session_id: str, req: OptInEmailRequest):
         upsert=True,
     )
 
-    return {"status": "opted_in", "email": req.email}
+    # If session already ended and report exists, send email immediately
+    email_sent = False
+    if session.get("status") == "ended":
+        report = await db.reports.find_one({"session_id": sid})
+        if report:
+            try:
+                from app.routes.reports import _generate_student_email_body
+                summary_text = await _generate_student_email_body(
+                    session_title=session.get("title", "Untitled Session"),
+                    report=report,
+                    db=db,
+                    session_id=sid,
+                )
+
+                from app.config import RESEND_API_KEY
+                if RESEND_API_KEY:
+                    import resend
+                    resend.api_key = RESEND_API_KEY
+                    resend.Emails.send({
+                        "from": "AskSafe <onboarding@resend.dev>",
+                        "to": [req.email],
+                        "subject": f"Session Summary: {session.get('title', 'Your Session')}",
+                        "text": summary_text,
+                    })
+                    print(f"[Email] Sent summary via Resend to {req.email} (immediate post-session)")
+                    email_sent = True
+                else:
+                    print(f"[Email] No RESEND_API_KEY — would send to {req.email}")
+                    print(summary_text[:200] + "...")
+
+                # Clean up this email record after sending
+                await db.session_emails.delete_one({"session_id": sid, "email": req.email})
+            except Exception as e:
+                print(f"[Email] Immediate send failed (non-critical): {e}")
+
+    return {"status": "opted_in", "email": req.email, "email_sent": email_sent}
 
 
 @router.post("/{session_id}/send-summary")
